@@ -1,0 +1,38 @@
+{
+  "name": "be_luxury-eye",
+  "version": "1.0.0",
+  "description": "booking luxury eye",
+  "main": "index.js",
+    "type": "module",
+  "scripts": {
+    "dev": "nodemon src/server.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hunganhkieu/BE_BOOKING_LUXURY-EYES.git"
+  },
+  "keywords": [
+    "booking",
+    "luxury",
+    "eye"
+  ],
+  "author": "lamnh-anhkh",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/hunganhkieu/BE_BOOKING_LUXURY-EYES/issues"
+  },
+  "homepage": "https://github.com/hunganhkieu/BE_BOOKING_LUXURY-EYES#readme",
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^5.2.1",
+    "jsonwebtoken": "^9.0.3",
+    "mongoose": "^8.21.0",
+    "morgan": "^1.10.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.11"
+  }
+}
