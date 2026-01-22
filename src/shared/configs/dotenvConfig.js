@@ -12,4 +12,5 @@ export const {
   JWT_REFRESH_IN,
   EMAIL_USER,
   EMAIL_PASSWORD,
+  CLIENT_URI,
 } = process.env;

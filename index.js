@@ -4,15 +4,16 @@ import morgan from "morgan";
 import connectDB from "./src/shared/configs/connectDb.js";
 import { HOST, PORT } from "./src/shared/configs/dotenvConfig.js";
 import notFoundRequest from "./src/shared/middlewares/notFoundRequest.js";
+import router from "./src/routes/index.js";
 
 const app = express();
-app.use(cors);
+app.use(cors());
 app.use(express.json());
 app.use(morgan("dev"));
 
 connectDB();
 
-// app.use("/", router)
+app.use("/api", router);
 
 app.use(notFoundRequest);
 

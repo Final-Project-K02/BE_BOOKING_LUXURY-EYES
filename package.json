@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "booking luxury eye",
   "main": "index.js",
-    "type": "module",
+  "type": "module",
   "scripts": {
     "dev": "nodemon src/server.js",
     "test": "echo \"Error: no test specified\" && exit 1"
@@ -29,8 +29,10 @@
     "dotenv": "^17.2.3",
     "express": "^5.2.1",
     "jsonwebtoken": "^9.0.3",
-    "mongoose": "^8.21.0",
-    "morgan": "^1.10.1"
+    "mongoose": "^9.1.4",
+    "morgan": "^1.10.1",
+    "nodemailer": "^7.0.12",
+    "zod": "^4.3.5"
   },
   "devDependencies": {
     "nodemon": "^3.1.11"
