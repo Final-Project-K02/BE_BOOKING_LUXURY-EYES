@@ -9,5 +9,5 @@ export const registerSchema = z.object({
       /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&.])[A-Za-z\d@$!%*?&.]+$/,
       "Mật khẩu phải chứa ít nhất 1 chữ hoa, 1 chữ thường, 1 số và 1 ký tự đặc biệt",
     ),
-  userName: z.string().min(6, "Họ và tên tối thiểu 6 ký tự"),
+  fullName: z.string().min(6, "Họ và tên tối thiểu 6 ký tự"),
 });

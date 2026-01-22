@@ -1,6 +1,6 @@
 import { CLIENT_URI } from "../../shared/configs/dotenvConfig.js";
 
-export const getTemplateRegisterSuccess = ({ userName }) => {
+export const getTemplateRegisterSuccess = ({ fullName }) => {
   return `
 <table width="100%" cellpadding="0" cellspacing="0"
   style="margin:0;padding:0;background-color:#0f172a;font-family:Arial,Helvetica,sans-serif;">
@@ -27,7 +27,7 @@ export const getTemplateRegisterSuccess = ({ userName }) => {
         <tr>
           <td style="padding:24px;color:#e5e7eb;font-size:15px;line-height:1.6;">
             <p style="margin:0 0 16px;">
-              Xin chào <strong>${userName}</strong>,
+              Xin chào <strong>${fullName}</strong>,
             </p>
 
             <p style="margin:0 0 16px;">

@@ -19,7 +19,7 @@ const userSchema = new Schema(
       required: true,
     },
 
-    userName: {
+    fullName: {
       type: String,
       required: true,
       trim: true,
@@ -54,6 +54,9 @@ const userSchema = new Schema(
         month: new Date().getMonth() + 1,
         count: 0,
       }),
+    },
+    refreshToken: {
+      type: String,
     },
   },
   {
