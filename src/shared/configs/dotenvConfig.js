@@ -13,4 +13,6 @@ export const {
   EMAIL_USER,
   EMAIL_PASSWORD,
   CLIENT_URI,
+  JWT_FORGOT_PASSWORD,
+  JWT_FORGOT_PASSWORD_IN,
 } = process.env;

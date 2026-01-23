@@ -1,13 +1,18 @@
 import createError from "../../shared/utils/createError.js";
 import createResponse from "../../shared/utils/createResponse.js";
 import handleAsync from "../../shared/utils/handleAsync.js";
-import { getTemplateRegisterSuccess } from "../mail/mail.template.js";
+import {
+  getTemplateForgotPassword,
+  getTemplateRegisterSuccess,
+} from "../mail/mail.template.js";
 import { sendMail } from "../mail/sendMail.js";
 import User from "../user/user.model.js";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { toPublicUser } from "../user/user.presentor.js";
 import {
+  JWT_FORGOT_PASSWORD,
+  JWT_FORGOT_PASSWORD_IN,
   JWT_REFRESH,
   JWT_REFRESH_IN,
   JWT_SECRET,
@@ -109,4 +114,49 @@ export const refreshToken = handleAsync(async (req, res) => {
     sameSite: "strict", // Chống CSRF,
   });
   return createResponse(res, 200, "OK", accessToken);
+});
+
+// đổi mật khẩu
+export const sendForgotPassword = handleAsync(async (req, res) => {
+  const { email } = req.body;
+  const userExist = await User.findOne({ email });
+  if (!userExist) return createError(res, 404, "Không tìm thấy người dùng");
+
+  const forgotPassword = jwt.sign({ _id: userExist._id }, JWT_FORGOT_PASSWORD, {
+    expiresIn: JWT_FORGOT_PASSWORD_IN,
+  });
+  await sendMail({
+    to: userExist.email,
+    subject: "Luxury Eyes - Quên mật khẩu",
+    html: getTemplateForgotPassword({
+      fullName: userExist.fullName,
+      token: forgotPassword,
+    }),
+  });
+
+  userExist.forgotToken = forgotPassword;
+  await userExist.save();
+  return createResponse(
+    res,
+    200,
+    "Vui lòng kiểm tra email để đặt lại mật khẩu",
+  );
+});
+
+export const forgotPassword = handleAsync(async (req, res) => {
+  const { token, newPassword } = req.body;
+  if (!token) return createError(res, 401, "INVALID TOKEN");
+
+  const user = await User.findOne({ forgotToken: token }).select("+password");
+  if (!user) return createError(res, 400, "Token không hợp lệ hoặc đã hết hạn");
+
+  const decoded = jwt.verify(token, JWT_FORGOT_PASSWORD);
+
+  const hash = await bcrypt.hash(newPassword, 10);
+
+  user.password = hash;
+  user.forgotToken = undefined;
+  await user.save();
+
+  return createResponse(res, 200, "Đổi mật khẩu thành công");
 });
