@@ -1,4 +1,4 @@
-import express from "express";
+import express, { Router } from "express";
 import cors from "cors";
 import morgan from "morgan";
 import connectDB from "./src/shared/configs/connectDb.js";
@@ -18,11 +18,13 @@ app.use(
 app.use(express.json());
 app.use(morgan("dev"));
 
+
 connectDB();
 
 app.use("/api", router);
 
 app.use(notFoundRequest);
+
 
 app.listen(PORT, () => {
   console.log(`Server is running on ${HOST}:${PORT}`);
