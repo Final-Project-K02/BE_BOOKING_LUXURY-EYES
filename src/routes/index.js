@@ -4,11 +4,11 @@ import userRoutes from "../modules/user/user.routes.js";
 import doctorRouter from "../modules/doctor/doctor.routes.js";
 import scheduleRouter from "../modules/schedule/schedule.routes.js";
 
-const router = Router()
+const router = Router();
 
 router.use("/auth", authRoutes);
 router.use("/", userRoutes);
-router.use("/doctors", doctorRouter)
-router.use("/schedules", scheduleRouter)
+router.use("/doctors", doctorRouter);
+router.use("/schedules", scheduleRouter);
 
 export default router;
