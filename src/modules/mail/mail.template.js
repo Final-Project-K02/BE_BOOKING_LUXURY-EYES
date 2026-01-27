@@ -52,7 +52,7 @@ export const getTemplateRegisterSuccess = ({ fullName }) => {
             <table width="100%" cellpadding="0" cellspacing="0" style="margin:24px 0;">
               <tr>
                 <td align="center">
-                  <a href="${CLIENT_URI}/auth/login"
+                  <a href="${CLIENT_URI}"
                     style="
                       display:inline-block;
                       padding:12px 28px;
@@ -133,7 +133,7 @@ export const getTemplateForgotPassword = ({ fullName, token }) => {
             <table width="100%" cellpadding="0" cellspacing="0" style="margin:24px 0;">
               <tr>
                 <td align="center">
-                  <a href="${CLIENT_URI}/auth/reset-password?token=${token}"
+                  <a href="${CLIENT_URI}?token=${token}"
                     style="
                       display:inline-block;
                       padding:12px 28px;
