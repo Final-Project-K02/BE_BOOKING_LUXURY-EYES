@@ -7,6 +7,6 @@ import { RoleEnum } from "../../shared/constant/enum.js";
 const userRoutes = Router();
 
 userRoutes.use(checkAuth, checkPermission([RoleEnum.ADMIN, RoleEnum.STAFF]));
-userRoutes.get("/users", getUsers);
+userRoutes.get("/", getUsers);
 
 export default userRoutes;
