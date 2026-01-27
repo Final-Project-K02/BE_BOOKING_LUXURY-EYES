@@ -16,7 +16,7 @@ const timeSlotSchema = new Schema(
     },
     status: {
       type: String,
-      enum: ["AVAILABLE", "BOOKED"],
+      enum: ["AVAILABLE", "BOOKED", "CANCELLED"],
       default: "AVAILABLE",
     },
     capacity: {
