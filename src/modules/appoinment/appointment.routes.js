@@ -11,22 +11,20 @@ import {
   updateAppointmentStatusSchema,
 } from "./appointment.schema.js";
 import { validate } from "../../middleware/validate.js";
+import { check } from "zod";
+import { checkAuth } from "../../shared/middlewares/checkAuth.js";
 
 const appointmentRouter = express.Router();
 
-
 appointmentRouter.get("/doctor", getAppointmentsByDoctor);
-
-
 appointmentRouter.get("/", getAppointments);
-
 appointmentRouter.post(
   "/",
+  checkAuth,
   validate(createAppointmentSchema),
   createAppointment
 );
-
-appointmentRouter.put(
+appointmentRouter.patch(
   "/:id",
   validate(updateAppointmentStatusSchema),
   updateAppointmentStatus

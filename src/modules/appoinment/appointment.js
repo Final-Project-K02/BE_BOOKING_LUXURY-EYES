@@ -1,34 +1,27 @@
-import mongoose, { Schema } from "mongoose";
+import mongoose from "mongoose";
 
-const appointmentSchema = new Schema(
+const appointmentSchema = new mongoose.Schema(
   {
     patient: {
-      type: Schema.Types.ObjectId,
+      type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: true,
     },
 
     doctor: {
-      type: Schema.Types.ObjectId,
-      ref: "Doctor",
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Doctor", // ✅ dùng Doctor model
       required: true,
     },
 
     scheduleId: {
-      type: Schema.Types.ObjectId,
+      type: mongoose.Schema.Types.ObjectId,
       ref: "Schedule",
       required: true,
     },
 
-    dateTime: {
-      type: Date,
-      required: true,
-    },
-
-    time: {
-      type: String, // "08:00"
-      required: true,
-    },
+    dateTime: Date,
+    time: String,
 
     room: {
       id: Number,
@@ -36,15 +29,21 @@ const appointmentSchema = new Schema(
     },
 
     payment: {
+      totalAmount: {
+        type: Number,
+        default: 0,
+      },
+      paymentMethod: {
+        type: String,
+        default: "CASH",
+      },
       paymentStatus: {
         type: String,
-        enum: ["UNPAID", "PAID"],
         default: "UNPAID",
       },
-      method: String,
     },
 
-    status: { 
+    status: {
       type: String,
       enum: [
         "PENDING",
@@ -56,8 +55,11 @@ const appointmentSchema = new Schema(
       ],
       default: "PENDING",
     },
+
+    reason: String,
   },
-  { timestamps: true, versionKey: false }
+  { timestamps: true }
 );
+
 
 export default mongoose.model("Appointment", appointmentSchema);

@@ -7,24 +7,25 @@ import handleAsync from "../../shared/utils/handleAsync.js";
 
 
 export const getAppointmentsByDoctor = handleAsync(async (req, res) => {
-  const { doctorId } = req.query;
+const { doctorId, scheduleId, dateTime, time, room } = req.body;
 
-  if (!doctorId) {
-    return createError(res, 400, "doctorId is required");
-  }
+if (!doctorId) {
+  return createError(res, 400, "doctorId is required");
+}
+
 
   const data = await Appointment.find({ doctor: doctorId })
-    .populate("patient", "fullName email")
-    .populate("doctor", "name")
+    .populate("patient", "fullName phone")
+.populate("doctor", "fullName avatar experience_year")
     .sort({ dateTime: 1 });
 
   createResponse(res, 200, "Success", data);
 });
 
 
+
 export const getAppointments = handleAsync(async (req, res) => {
   const { userId, doctorId, scheduleId } = req.query;
-
   const filter = {};
 
   if (userId) filter.patient = userId;
@@ -32,8 +33,8 @@ export const getAppointments = handleAsync(async (req, res) => {
   if (scheduleId) filter.scheduleId = scheduleId;
 
   const data = await Appointment.find(filter)
-    .populate("patient", "fullName email")
-    .populate("doctor", "name")
+    .populate("doctor", "name avatar experience_year")
+    .populate("patient", "fullName phone")
     .sort({ createdAt: -1 });
 
   createResponse(res, 200, "Success", data);
@@ -41,14 +42,35 @@ export const getAppointments = handleAsync(async (req, res) => {
 
 
 export const createAppointment = handleAsync(async (req, res) => {
-  const userId = req.user.id;
-  const { doctorId, scheduleId, dateTime, time, room } = req.body;
+  const userId = req.user?._id;
 
+  if (!userId) {
+    return createError(res, 401, "Unauthorized");
+  }
+
+  const {
+    doctorId,
+    scheduleId,
+    dateTime,
+    time,
+    room,
+  } = req.body;
+
+  if (!doctorId) {
+    return createError(res, 400, "doctorId is required");
+  }
+
+  if (!scheduleId || !time) {
+    return createError(res, 400, "scheduleId and time are required");
+  }
+
+  // 1️⃣ Check schedule
   const schedule = await Schedule.findById(scheduleId);
   if (!schedule) {
     return createError(res, 404, "Schedule not found");
   }
 
+  // 2️⃣ Check slot
   const slot = schedule.timeSlots.find(
     (s) => s.time === time && s.status === "AVAILABLE"
   );
@@ -57,10 +79,11 @@ export const createAppointment = handleAsync(async (req, res) => {
     return createError(res, 400, "Khung giờ đã được đặt");
   }
 
-  // 🔒 Khoá slot
+  // 3️⃣ Lock slot
   slot.status = "BOOKED";
   await schedule.save();
 
+  // 4️⃣ Create appointment
   const appointment = await Appointment.create({
     patient: userId,
     doctor: doctorId,
@@ -71,8 +94,15 @@ export const createAppointment = handleAsync(async (req, res) => {
     status: "PENDING",
   });
 
-  createResponse(res, 201, "Create appointment success", appointment);
+  // 5️⃣ Populate
+  const populated = await Appointment.findById(appointment._id)
+    .populate("doctor", "name avatar experience_year")
+    .populate("patient", "fullName phone");
+
+  createResponse(res, 201, "Create appointment success", populated);
 });
+
+
 
 
 export const updateAppointmentStatus = handleAsync(async (req, res) => {
