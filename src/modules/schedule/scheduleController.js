@@ -1,9 +1,26 @@
 import DoctorSchedule from "./doctorSchedule.js";
 
 export const getSchedules = async (req, res) => {
-  const schedules = await DoctorSchedule.find().sort({ createdAt: -1 });
+  const { doctorId } = req.query;
+
+  const filter = {};
+  if (doctorId) {
+    filter.doctorId = doctorId;
+  }
+
+  const schedules = await DoctorSchedule
+    .find(filter)
+    .sort({ createdAt: -1 });
+
+  if (schedules.length === 0) {
+    return res.status(404).json({
+      message: "Không có lịch rảnh cho bác sĩ này",
+    });
+  }
+
   res.json({ data: schedules });
 };
+
 
 export const createSchedule = async (req, res) => {
   const schedule = await DoctorSchedule.create(req.body);

@@ -14,12 +14,12 @@ import {
 } from "../doctor/doctor.schema.js";
 import { validate } from "../../middleware/validate.js";
 
-const router = express.Router();
+const doctorRouter = express.Router();
 
-router.post("/", validate(createDoctorSchema), createDoctor);
-router.get("/", getDoctors);
-router.get("/:id", validate(doctorIdSchema), getDoctorById);
-router.put("/:id", validate(updateDoctorSchema), updateDoctor);
-router.delete("/:id", validate(doctorIdSchema), deleteDoctor);
+doctorRouter.post("/", validate(createDoctorSchema), createDoctor);
+doctorRouter.get("/", getDoctors);
+doctorRouter.get("/:id", validate(doctorIdSchema), getDoctorById);
+doctorRouter.put("/:id", validate(updateDoctorSchema), updateDoctor);
+doctorRouter.delete("/:id", validate(doctorIdSchema), deleteDoctor);
 
-export default router;
+export default doctorRouter;
