@@ -22,7 +22,6 @@ const doctorSchema = new Schema(
       default: "",  
     },
    
-
     price: {
       type: Number,
       required: true,
@@ -32,6 +31,11 @@ const doctorSchema = new Schema(
     description: {
       type: String,
       default: "",
+    },
+
+    is_active: {
+      type: Boolean,
+      default: true,
     },
 
     experience_year: {

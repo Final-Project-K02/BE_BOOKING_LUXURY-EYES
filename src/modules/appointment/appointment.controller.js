@@ -3,6 +3,7 @@ import Schedule from "../schedule/doctorSchedule.js";
 import createError from "../../shared/utils/createError.js";
 import createResponse from "../../shared/utils/createResponse.js";
 import handleAsync from "../../shared/utils/handleAsync.js";
+import Doctor from "../doctor/doctor.js";
 
 
 
@@ -41,66 +42,44 @@ export const getAppointments = handleAsync(async (req, res) => {
 });
 
 
-export const createAppointment = handleAsync(async (req, res) => {
-  const userId = req.user?._id;
 
-  if (!userId) {
-    return createError(res, 401, "Unauthorized");
+export const createAppointment = async (req, res) => {
+  try {
+    const { doctorId, dateTime, time, room } = req.body;
+
+    const doctor = await Doctor.findById(doctorId);
+    if (!doctor) {
+      return res.status(404).json({
+        message: "Không tìm thấy bác sĩ",
+      });
+    }
+
+    if (!doctor.is_active) {
+      return res.status(400).json({
+        message: "Bác sĩ hiện không nhận lịch khám",
+      });
+    }
+
+    // 👉 tiếp tục logic tạo lịch
+    const appointment = await Appointment.create({
+      doctor: doctorId,
+      dateTime,
+      time,
+      room,
+      patient: req.user._id,
+      status: "PENDING",
+    });
+
+    return res.status(201).json({
+      message: "Đặt lịch thành công",
+      data: appointment,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: error.message,
+    });
   }
-
-  const {
-    doctorId,
-    scheduleId,
-    dateTime,
-    time,
-    room,
-  } = req.body;
-
-  if (!doctorId) {
-    return createError(res, 400, "doctorId is required");
-  }
-
-  if (!scheduleId || !time) {
-    return createError(res, 400, "scheduleId and time are required");
-  }
-
-  // 1️⃣ Check schedule
-  const schedule = await Schedule.findById(scheduleId);
-  if (!schedule) {
-    return createError(res, 404, "Schedule not found");
-  }
-
-  // 2️⃣ Check slot
-  const slot = schedule.timeSlots.find(
-    (s) => s.time === time && s.status === "AVAILABLE"
-  );
-
-  if (!slot) {
-    return createError(res, 400, "Khung giờ đã được đặt");
-  }
-
-  // 3️⃣ Lock slot
-  slot.status = "BOOKED";
-  await schedule.save();
-
-  // 4️⃣ Create appointment
-  const appointment = await Appointment.create({
-    patient: userId,
-    doctor: doctorId,
-    scheduleId,
-    dateTime,
-    time,
-    room,
-    status: "PENDING",
-  });
-
-  // 5️⃣ Populate
-  const populated = await Appointment.findById(appointment._id)
-    .populate("doctor", "name avatar experience_year")
-    .populate("patient", "fullName phone");
-
-  createResponse(res, 201, "Create appointment success", populated);
-});
+};
 
 
 
