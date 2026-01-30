@@ -16,18 +16,19 @@ import { checkAuth } from "../../shared/middlewares/checkAuth.js";
 
 const appointmentRouter = express.Router();
 
+appointmentRouter.use(checkAuth);
 appointmentRouter.get("/doctor", getAppointmentsByDoctor);
 appointmentRouter.get("/", getAppointments);
 appointmentRouter.post(
   "/",
   checkAuth,
   validate(createAppointmentSchema),
-  createAppointment
+  createAppointment,
 );
 appointmentRouter.patch(
   "/:id",
   validate(updateAppointmentStatusSchema),
-  updateAppointmentStatus
+  updateAppointmentStatus,
 );
 
 export default appointmentRouter;
