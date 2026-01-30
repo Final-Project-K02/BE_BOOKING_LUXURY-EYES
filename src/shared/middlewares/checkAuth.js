@@ -11,7 +11,7 @@ export const checkAuth = async (req, res, next) => {
     const decoded = jwt.verify(token, JWT_SECRET);
 
     const userExist = await User.findById(decoded._id);
-    if (!userExist) return createError(res, 404, "Unauthorized");
+    if (!userExist) return createError(res, 401, "Unauthorized");
 
     if (userExist.is_locked)
       return createError(res, 403, "Tài khoản đã bị khóa");
