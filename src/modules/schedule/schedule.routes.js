@@ -11,12 +11,35 @@ import {
   createScheduleSchema,
   updateScheduleSchema,
 } from "./schedule.schema.js";
+import { checkAuth } from "../../shared/middlewares/checkAuth.js";
+import { RoleEnum } from "../../shared/constant/enum.js";
+import { checkPermission } from "../../shared/middlewares/checkPermission.js";
 
 const scheduleRouter = express.Router();
 
-scheduleRouter.get("/", getSchedules);
-scheduleRouter.post("/", validate(createScheduleSchema), createSchedule);
-scheduleRouter.put("/:id", validate(updateScheduleSchema), updateSchedule);
-scheduleRouter.delete("/:id", deleteSchedule);
+scheduleRouter.get("/", checkAuth, getSchedules);
+
+scheduleRouter.post(
+  "/",
+  checkAuth,
+  checkPermission([RoleEnum.STAFF, RoleEnum.ADMIN]),
+  validate(createScheduleSchema),
+  createSchedule,
+);
+
+scheduleRouter.put(
+  "/:id",
+  checkAuth,
+  checkPermission([RoleEnum.STAFF, RoleEnum.ADMIN]),
+  validate(updateScheduleSchema),
+  updateSchedule,
+);
+
+scheduleRouter.delete(
+  "/:id",
+  checkAuth,
+  checkPermission([RoleEnum.STAFF, RoleEnum.ADMIN]),
+  deleteSchedule,
+);
 
 export default scheduleRouter;
