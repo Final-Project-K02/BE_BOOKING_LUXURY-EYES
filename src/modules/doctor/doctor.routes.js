@@ -4,6 +4,8 @@ import {
   deleteDoctor,
   getDoctorById,
   getDoctors,
+  getDoctorsByAdmin,
+  toggleDoctorStatus,
   updateDoctor,
 } from "../doctor/doctorController.js";
 
@@ -17,34 +19,17 @@ import {
   updateDoctorSchema,
 } from "../doctor/doctor.schema.js";
 
+
+
 const doctorRouter = express.Router();
+doctorRouter.post("/", validate(createDoctorSchema), createDoctor);
+doctorRouter.get("/", getDoctors);
+doctorRouter.get("/admin", getDoctorsByAdmin);
 
-doctorRouter.get("/", checkAuth, getDoctors);
 
-doctorRouter.get("/:id", checkAuth, validate(doctorIdSchema), getDoctorById);
+doctorRouter.get("/:id", validate(doctorIdSchema), getDoctorById);
+doctorRouter.put("/:id", validate(updateDoctorSchema), updateDoctor);
+doctorRouter.delete("/:id", validate(doctorIdSchema), deleteDoctor);
 
-doctorRouter.post(
-  "/",
-  checkAuth,
-  checkPermission([RoleEnum.ADMIN]),
-  validate(createDoctorSchema),
-  createDoctor,
-);
-
-doctorRouter.put(
-  "/:id",
-  checkAuth,
-  checkPermission([RoleEnum.STAFF, RoleEnum.ADMIN]),
-  validate(updateDoctorSchema),
-  updateDoctor,
-);
-
-doctorRouter.delete(
-  "/:id",
-  checkAuth,
-  checkPermission([RoleEnum.ADMIN]),
-  validate(doctorIdSchema),
-  deleteDoctor,
-);
-
+doctorRouter.patch("/:id/status", toggleDoctorStatus);
 export default doctorRouter;

@@ -63,9 +63,7 @@ export const updateDoctorSchema = z.object({
   }),
 });
 
-/**
- * Doctor ID param
- */
+
 export const doctorIdSchema = z.object({
   params: z.object({
     id: z.string().length(24, "Doctor id không hợp lệ"),

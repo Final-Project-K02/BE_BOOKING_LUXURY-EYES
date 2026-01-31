@@ -2,6 +2,7 @@ import { buildDoctorQuery } from "../../shared/utils/appointmentQueryBuilder.js"
 import Appointment from "../appointment/appointment.js";
 
 import Doctor from "./doctor.js";
+import createResponse from "../../shared/utils/createResponse.js";
 
 
 export const createDoctor = async (req, res) => {
@@ -12,7 +13,7 @@ export const createDoctor = async (req, res) => {
       data: doctor,
     });
   } catch (error) {
-     return createReponse(res, 400, "Successfully");
+    return createResponse(res, 400, error.message || "Create doctor failed");
   }
 };
 
@@ -83,8 +84,15 @@ export const getDoctorById = async (req, res) => {
       data: doctor,
     });
   } catch (error) {
+    if (error && error.name === "CastError") {
+      return res.status(400).json({
+        message: "Validation error",
+        errors: { id: "Doctor id không hợp lệ" },
+      });
+    }
+
     return res.status(400).json({
-      message: "Invalid doctor id",
+      message: error.message || "Invalid doctor id",
     });
   }
 };
@@ -109,6 +117,13 @@ export const updateDoctor = async (req, res) => {
       data: doctor,
     });
   } catch (error) {
+    if (error && error.name === "CastError") {
+      return res.status(400).json({
+        message: "Validation error",
+        errors: { id: "Doctor id không hợp lệ" },
+      });
+    }
+
     return res.status(400).json({
       message: error.message,
     });
@@ -147,6 +162,13 @@ export const deleteDoctor = async (req, res) => {
       message: "Delete doctor successfully",
     });
   } catch (error) {
+    if (error && error.name === "CastError") {
+      return res.status(400).json({
+        message: "Validation error",
+        errors: { id: "Doctor id không hợp lệ" },
+      });
+    }
+
     return res.status(400).json({
       message: error.message,
     });
