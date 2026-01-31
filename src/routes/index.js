@@ -10,14 +10,12 @@ import { checkPermission } from "../shared/middlewares/checkPermission.js";
 const router = Router();
 
 router.use("/auth", authRoutes);
-router.use("/users", userRoutes);
+router.use("/users", checkAuth,checkPermission, userRoutes);
 router.use("/doctors", doctorRouter);
 router.use("/schedules", scheduleRouter);
 router.use("/appointments", appointmentRoutes);
-router.get(
-  "/admin/doctors",
+router.get("/admin/doctors",
   checkAuth,checkPermission,
- 
   getDoctorsByAdmin
 );
 
