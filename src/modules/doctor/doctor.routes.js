@@ -1,21 +1,21 @@
 import express from "express";
 import {
   createDoctor,
-  getDoctors,
-  getDoctorById,
-  updateDoctor,
   deleteDoctor,
+  getDoctorById,
+  getDoctors,
+  updateDoctor,
 } from "../doctor/doctorController.js";
 
-import {
-  createDoctorSchema,
-  updateDoctorSchema,
-  doctorIdSchema,
-} from "../doctor/doctor.schema.js";
 import { validate } from "../../middleware/validate.js";
+import { RoleEnum } from "../../shared/constant/enum.js";
 import { checkAuth } from "../../shared/middlewares/checkAuth.js";
 import { checkPermission } from "../../shared/middlewares/checkPermission.js";
-import { RoleEnum } from "../../shared/constant/enum.js";
+import {
+  createDoctorSchema,
+  doctorIdSchema,
+  updateDoctorSchema,
+} from "../doctor/doctor.schema.js";
 
 const doctorRouter = express.Router();
 
