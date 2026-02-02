@@ -12,7 +12,7 @@ import appointmentRouter from "../modules/appointment/appointment.routes.js";
 const router = Router();
 
 router.use("/auth", authRoutes);
-router.use("/users", checkAuth, checkPermission, userRoutes);
+router.use("/users", userRoutes);
 router.use("/doctors", doctorRouter);
 router.use("/schedules", scheduleRouter);
 router.use("/appointments", appointmentRouter);
