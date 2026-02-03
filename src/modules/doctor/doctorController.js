@@ -147,7 +147,10 @@ export const deleteDoctor = async (req, res) => {
 
     const hasAppointment = await Appointment.exists({
       doctor: doctor._id,
-      status: { $in: ["pending", "confirmed"] },
+      status: { $in: [ "PENDING",
+        "CONFIRM",
+        "CHECKIN",
+        "REQUEST-CANCELED",] },
     });
 
     if (hasAppointment) {
@@ -188,7 +191,11 @@ export const toggleDoctorStatus = async (req, res) => {
     if (doctor.is_active) {
       const hasAppointment = await Appointment.exists({
         doctor: doctor._id,
-        status: { $in: ["pending", "confirmed"] },
+        status: { $in: [ 
+          "PENDING",
+        "CONFIRM",
+        "CHECKIN",
+        "REQUEST-CANCELED",] },
       });
 
       if (hasAppointment) {
@@ -199,7 +206,6 @@ export const toggleDoctorStatus = async (req, res) => {
 
       doctor.is_active = false;
     }
-    // 🟢 TẮT → BẬT
     else {
       doctor.is_active = true;
     }

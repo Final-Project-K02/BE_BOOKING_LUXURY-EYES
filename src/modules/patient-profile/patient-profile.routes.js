@@ -19,7 +19,7 @@ import { RoleEnum } from "../../shared/constant/enum.js";
 
 const patientProfileRoutes = Router();
 
-patientProfileRoutes.use(checkAuth, checkPermission([RoleEnum.USER]));
+patientProfileRoutes.use(checkAuth);
 patientProfileRoutes.post(
   "/",
   validBodyRequest(createPatientProfileSchema),
