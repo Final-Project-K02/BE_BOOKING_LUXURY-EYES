@@ -5,25 +5,20 @@ import createResponse from "../../shared/utils/createResponse.js";
 import handleAsync from "../../shared/utils/handleAsync.js";
 import Doctor from "../doctor/doctor.js";
 
-
-
 export const getAppointmentsByDoctor = handleAsync(async (req, res) => {
-const { doctorId, scheduleId, dateTime, time, room } = req.body;
+  const { doctorId, scheduleId, dateTime, time, room } = req.body;
 
-if (!doctorId) {
-  return createError(res, 400, "doctorId is required");
-}
-
+  if (!doctorId) {
+    return createError(res, 400, "doctorId is required");
+  }
 
   const data = await Appointment.find({ doctor: doctorId })
     .populate("patient", "fullName phone")
-.populate("doctor", "fullName avatar experience_year")
+    .populate("doctor", "fullName avatar experience_year")
     .sort({ dateTime: 1 });
 
   createResponse(res, 200, "Success", data);
 });
-
-
 
 export const getAppointments = handleAsync(async (req, res) => {
   const { userId, doctorId, scheduleId } = req.query;
@@ -41,11 +36,9 @@ export const getAppointments = handleAsync(async (req, res) => {
   createResponse(res, 200, "Success", data);
 });
 
-
-
 export const createAppointment = async (req, res) => {
   try {
-    const { doctorId, dateTime, time, room } = req.body;
+    const { doctorId, scheduleId, dateTime, time, room } = req.body;
 
     const doctor = await Doctor.findById(doctorId);
     if (!doctor) {
@@ -63,6 +56,7 @@ export const createAppointment = async (req, res) => {
     // 👉 tiếp tục logic tạo lịch
     const appointment = await Appointment.create({
       doctor: doctorId,
+      scheduleId,
       dateTime,
       time,
       room,
@@ -80,9 +74,6 @@ export const createAppointment = async (req, res) => {
     });
   }
 };
-
-
-
 
 export const updateAppointmentStatus = handleAsync(async (req, res) => {
   const { id } = req.params;
@@ -112,9 +103,7 @@ export const updateAppointmentStatus = handleAsync(async (req, res) => {
   if (status === "CANCELED") {
     const schedule = await Schedule.findById(appointment.scheduleId);
     if (schedule) {
-      const slot = schedule.timeSlots.find(
-        (s) => s.time === appointment.time
-      );
+      const slot = schedule.timeSlots.find((s) => s.time === appointment.time);
       if (slot) slot.status = "AVAILABLE";
       await schedule.save();
     }
