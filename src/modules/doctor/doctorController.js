@@ -1,9 +1,12 @@
-import { buildDoctorQuery } from "../../shared/utils/appointmentQueryBuilder.js";
+import {
+  buildDoctorQuery,
+  queryWithFilters,
+} from "../../shared/utils/appointmentQueryBuilder.js";
 import Appointment from "../appointment/appointment.js";
+import DoctorSchedule from "../schedule/doctorSchedule.js";
 
 import Doctor from "./doctor.js";
 import createResponse from "../../shared/utils/createResponse.js";
-
 
 export const createDoctor = async (req, res) => {
   try {
@@ -17,7 +20,6 @@ export const createDoctor = async (req, res) => {
   }
 };
 
-
 export const getDoctors = async (req, res) => {
   try {
     const {
@@ -25,45 +27,96 @@ export const getDoctors = async (req, res) => {
       minPrice,
       maxPrice,
       experience_year,
+      scheduleDateFrom,
+      scheduleDateTo,
+      createdAtFrom,
+      createdAtTo,
+      page = 1,
+      limit = 10,
     } = req.query;
 
-    const filter = {
+    const filters = {
       is_active: true,
     };
 
-    if (keyword) {
-      filter.name = {
-        $regex: keyword,
-        $options: "i",
-      };
+    if (minPrice) {
+      filters.priceMin = minPrice;
+    }
+
+    if (maxPrice) {
+      filters.priceMax = maxPrice;
     }
 
     if (experience_year) {
-      filter.experience_year = {
-        $gte: Number(experience_year),
+      filters.experience_yearMin = experience_year;
+    }
+
+    if (createdAtFrom) {
+      filters.createdAtFrom = createdAtFrom;
+    }
+
+    if (createdAtTo) {
+      filters.createdAtTo = createdAtTo;
+    }
+
+    if (scheduleDateFrom || scheduleDateTo) {
+      const dateCond = {};
+
+      if (scheduleDateFrom) {
+        const start = new Date(scheduleDateFrom);
+        start.setHours(0, 0, 0, 0);
+        dateCond.$gte = start;
+      }
+
+      if (scheduleDateTo) {
+        const end = new Date(scheduleDateTo);
+        end.setHours(23, 59, 59, 999);
+        dateCond.$lte = end;
+      }
+
+      const scheduleFilter = {
+        timeSlots: {
+          $elemMatch: {
+            date: dateCond,
+            status: "AVAILABLE",
+          },
+        },
       };
-    }
 
-    if (minPrice || maxPrice) {
-      filter.price = {};
+      const doctorIds = await DoctorSchedule.distinct(
+        "doctorId",
+        scheduleFilter,
+      );
 
-      if (minPrice) {
-        filter.price.$gte = Number(minPrice);
+      if (!doctorIds.length) {
+        const pageNum = parseInt(page, 10) || 1;
+        const limitNum = parseInt(limit, 10) || 10;
+
+        return res.status(200).json({
+          data: [],
+          meta: {
+            total: 0,
+            page: pageNum,
+            limit: limitNum,
+            totalPages: 0,
+          },
+        });
       }
 
-      if (maxPrice) {
-        filter.price.$lte = Number(maxPrice);
-      }
+      filters._id = { $in: doctorIds };
     }
 
-    console.log("DOCTOR FILTER:", filter);
-
-    const doctors = await Doctor.find(filter)
-      .sort({ createdAt: -1 });
-
-    return res.status(200).json({
-      data: doctors,
+    const result = await queryWithFilters(Doctor, {
+      filters,
+      search: keyword,
+      searchFields: ["name"],
+      sort: "createdAt",
+      order: "desc",
+      page,
+      limit,
     });
+
+    return res.status(200).json(result);
   } catch (error) {
     console.error(error);
     return res.status(500).json({
@@ -97,14 +150,11 @@ export const getDoctorById = async (req, res) => {
   }
 };
 
-
 export const updateDoctor = async (req, res) => {
   try {
-    const doctor = await Doctor.findByIdAndUpdate(
-      req.params.id,
-      req.body,
-      { new: true }
-    );
+    const doctor = await Doctor.findByIdAndUpdate(req.params.id, req.body, {
+      new: true,
+    });
 
     if (!doctor) {
       return res.status(404).json({
@@ -129,8 +179,6 @@ export const updateDoctor = async (req, res) => {
     });
   }
 };
-
-
 
 export const deleteDoctor = async (req, res) => {
   try {
@@ -178,8 +226,6 @@ export const deleteDoctor = async (req, res) => {
   }
 };
 
-
-
 export const toggleDoctorStatus = async (req, res) => {
   try {
     const doctor = await Doctor.findById(req.params.id);
@@ -225,16 +271,9 @@ export const toggleDoctorStatus = async (req, res) => {
   }
 };
 
-
-
 export const getDoctorsByAdmin = async (req, res) => {
   try {
-    const {
-      keyword,
-      minPrice,
-      maxPrice,
-      experience_year,
-    } = req.query;
+    const { keyword, minPrice, maxPrice, experience_year } = req.query;
 
     const filter = {};
 
@@ -265,8 +304,7 @@ export const getDoctorsByAdmin = async (req, res) => {
 
     console.log("DOCTOR FILTER:", filter);
 
-    const doctors = await Doctor.find(filter)
-      .sort({ createdAt: -1 });
+    const doctors = await Doctor.find(filter).sort({ createdAt: -1 });
 
     return res.status(200).json({
       data: doctors,
