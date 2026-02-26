@@ -8,6 +8,12 @@ const appointmentSchema = new mongoose.Schema(
       required: true,
     },
 
+    patientProfile: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "PatientProfile",
+      required: true,
+    },
+
     doctor: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Doctor", // ✅ dùng Doctor model
@@ -58,8 +64,7 @@ const appointmentSchema = new mongoose.Schema(
 
     reason: String,
   },
-  { timestamps: true }
+  { timestamps: true },
 );
-
 
 export default mongoose.model("Appointment", appointmentSchema);
