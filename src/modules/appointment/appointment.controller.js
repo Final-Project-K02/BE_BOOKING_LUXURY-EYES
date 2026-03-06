@@ -5,16 +5,35 @@ import createResponse from "../../shared/utils/createResponse.js";
 import handleAsync from "../../shared/utils/handleAsync.js";
 import Doctor from "../doctor/doctor.js";
 
+const expirePendingAppointments = async (filter = {}) => {
+  await Appointment.updateMany(
+    {
+      ...filter,
+      status: "PENDING",
+      "payment.paymentStatus": { $in: ["UNPAID", "PENDING", "FAILED"] },
+      "payment.expireAt": { $ne: null, $lte: new Date() },
+    },
+    {
+      $set: {
+        status: "CANCELED",
+        "payment.paymentStatus": "EXPIRED",
+      },
+    }
+  );
+};
+
 export const getAppointmentsByDoctor = handleAsync(async (req, res) => {
-  const { doctorId, scheduleId, dateTime, time, room } = req.body;
+  const { doctorId } = req.query;
 
   if (!doctorId) {
     return createError(res, 400, "doctorId is required");
   }
 
+  await expirePendingAppointments({ doctor: doctorId });
+
   const data = await Appointment.find({ doctor: doctorId })
     .populate("patient", "fullName phone")
-    .populate("doctor", "fullName avatar experience_year")
+    .populate("doctor", "name fullName avatar experience_year")
     .sort({ dateTime: 1 });
 
   createResponse(res, 200, "Success", data);
@@ -28,8 +47,10 @@ export const getAppointments = handleAsync(async (req, res) => {
   if (doctorId) filter.doctor = doctorId;
   if (scheduleId) filter.scheduleId = scheduleId;
 
+  await expirePendingAppointments(filter);
+
   const data = await Appointment.find(filter)
-    .populate("doctor", "name avatar experience_year")
+    .populate("doctor", "name fullName avatar experience_year")
     .populate("patient", "fullName phone")
     .sort({ createdAt: -1 });
 
@@ -38,7 +59,16 @@ export const getAppointments = handleAsync(async (req, res) => {
 
 export const createAppointment = async (req, res) => {
   try {
-    const { doctorId, scheduleId, dateTime, time, room } = req.body;
+    const {
+      doctorId,
+      scheduleId,
+      dateTime,
+      time,
+      room,
+      totalAmount,
+      location,
+      symptoms,
+    } = req.body;
 
     const doctor = await Doctor.findById(doctorId);
     if (!doctor) {
@@ -53,15 +83,28 @@ export const createAppointment = async (req, res) => {
       });
     }
 
-    // 👉 tiếp tục logic tạo lịch
+    const total = Number(totalAmount || 0);
+    const depositAmount = Math.ceil(total * 0.4);
+    const expireAt = new Date(Date.now() + 5 * 60 * 1000);
+
     const appointment = await Appointment.create({
       doctor: doctorId,
       scheduleId,
       dateTime,
       time,
       room,
+      location: location || "",
+      symptoms: symptoms || "",
       patient: req.user._id,
       status: "PENDING",
+      payment: {
+        totalAmount: total,
+        depositRate: 40,
+        depositAmount,
+        paymentMethod: "VNPAY",
+        paymentStatus: "UNPAID",
+        expireAt,
+      },
     });
 
     return res.status(201).json({
@@ -77,7 +120,7 @@ export const createAppointment = async (req, res) => {
 
 export const updateAppointmentStatus = handleAsync(async (req, res) => {
   const { id } = req.params;
-  const { status } = req.body;
+  const { status, reason } = req.body;
 
   const appointment = await Appointment.findById(id);
   if (!appointment) return createError(res, 404, "Appointment not found");
@@ -98,9 +141,19 @@ export const updateAppointmentStatus = handleAsync(async (req, res) => {
   }
 
   appointment.status = status;
-  await appointment.save();
+
+  if (reason) {
+    appointment.reason = reason;
+  }
 
   if (status === "CANCELED") {
+    if (appointment.payment?.paymentStatus !== "PAID") {
+      appointment.payment.paymentStatus =
+        appointment.payment.paymentStatus === "EXPIRED"
+          ? "EXPIRED"
+          : "FAILED";
+    }
+
     const schedule = await Schedule.findById(appointment.scheduleId);
     if (schedule) {
       const slot = schedule.timeSlots.find((s) => s.time === appointment.time);
@@ -108,6 +161,8 @@ export const updateAppointmentStatus = handleAsync(async (req, res) => {
       await schedule.save();
     }
   }
+
+  await appointment.save();
 
   createResponse(res, 200, "Update status success", appointment);
 });
