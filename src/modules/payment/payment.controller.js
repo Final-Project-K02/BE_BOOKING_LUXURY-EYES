@@ -197,13 +197,7 @@ export const createVnpayPayment = async (req, res) => {
     const query = buildQuery(vnpParams);
 
     const paymentUrl = `${process.env.VNPAY_URL}?${query}&vnp_SecureHash=${secureHash}`;
-    console.log("==== CREATE DIRECT VNPAY PAYMENT ====");
-    console.log("TMN =", process.env.VNPAY_TMN_CODE);
-    console.log("RETURN =", process.env.VNPAY_RETURN_URL);
-    console.log("IPN =", process.env.VNPAY_IPN_URL);
-    console.log("PARAMS =", vnpParams);
-    console.log("SIGN =", secureHash);
-    console.log("URL =", paymentUrl);
+
     return res.status(201).json({
       message: "Tạo link thanh toán thành công",
       data: {
@@ -312,62 +306,47 @@ export const vnpayReturn = async (req, res) => {
       );
     }
 
+    const success =
+      inputData.vnp_ResponseCode === "00" &&
+      inputData.vnp_TransactionStatus === "00";
+
     const txnRef = inputData.vnp_TxnRef;
-    const vnpAmount = Number(inputData.vnp_Amount) / 100;
-    const responseCode = inputData.vnp_ResponseCode;
-    const transactionStatus = inputData.vnp_TransactionStatus;
-    const vnpTransactionNo = inputData.vnp_TransactionNo;
+    let depositAmount = 0;
+    let paidAt = "";
+    let appointmentStatus = "PENDING";
 
     const appointment = await Appointment.findOne({ "payment.txnRef": txnRef });
 
-    if (!appointment) {
-      return res.redirect(
-        `${process.env.CLIENT_URI}payment/vnpay-result?success=false&code=01`,
-      );
+    if (appointment) {
+      const now = new Date();
+      const isExpired =
+        !appointment.payment?.expireAt ||
+        new Date(appointment.payment.expireAt) <= now;
+
+      if (success) {
+        appointment.payment.paymentStatus = "PAID";
+        appointment.payment.vnpTransactionNo = inputData.vnp_TransactionNo || null;
+        appointment.payment.paidAt = now;
+        appointment.status = "CONFIRM";
+      } else if (isExpired) {
+        appointment.payment.paymentStatus = "EXPIRED";
+        appointment.status = "CANCELED";
+      } else {
+        appointment.payment.paymentStatus = "UNPAID";
+        appointment.status = "PENDING";
+      }
+
+      await appointment.save();
+
+      depositAmount = Number(appointment.payment?.depositAmount || 0);
+      paidAt = appointment.payment?.paidAt
+        ? new Date(appointment.payment.paidAt).toISOString()
+        : "";
+      appointmentStatus = appointment.status || "PENDING";
     }
 
-    if (Number(appointment.payment?.depositAmount || 0) !== vnpAmount) {
-      return res.redirect(
-        `${process.env.CLIENT_URI}payment/vnpay-result?success=false&code=04`,
-      );
-    }
-
-    if (
-      appointment.payment?.paymentStatus === "PAID" ||
-      appointment.status === "CONFIRM"
-    ) {
-      const paidAt = appointment.payment?.paidAt?.toISOString();
-      return res.redirect(
-        `${process.env.CLIENT_URI}payment/vnpay-result?success=true&txnRef=${txnRef}&code=00&paidAmount=${vnpAmount}${paidAt ? `&paidAt=${encodeURIComponent(paidAt)}` : ""}`,
-      );
-    }
-
-    const now = new Date();
-    const isExpired =
-      !appointment.payment?.expireAt ||
-      new Date(appointment.payment.expireAt) <= now;
-
-    const isSuccess = responseCode === "00" && transactionStatus === "00";
-
-    if (isSuccess) {
-      appointment.payment.paymentStatus = "PAID";
-      appointment.payment.vnpTransactionNo = vnpTransactionNo || null;
-      appointment.payment.paidAt = new Date();
-      appointment.status = "CONFIRM";
-    } else if (isExpired) {
-      appointment.payment.paymentStatus = "EXPIRED";
-      appointment.status = "CANCELED";
-    } else {
-      // allow retry while still within expiration window
-      appointment.payment.paymentStatus = "UNPAID";
-      appointment.status = "PENDING";
-    }
-
-    await appointment.save();
-
-    const paidAt = appointment.payment?.paidAt?.toISOString();
     return res.redirect(
-      `${process.env.CLIENT_URI}payment/vnpay-result?success=${isSuccess}&txnRef=${txnRef}&code=${responseCode}&paidAmount=${vnpAmount}${paidAt ? `&paidAt=${encodeURIComponent(paidAt)}` : ""}`,
+      `${process.env.CLIENT_URI}payment/vnpay-result?success=${success}&txnRef=${txnRef}&code=${inputData.vnp_ResponseCode}&depositAmount=${depositAmount}&paidAt=${encodeURIComponent(paidAt)}&status=${appointmentStatus}`,
     );
   } catch (error) {
     return res.redirect(

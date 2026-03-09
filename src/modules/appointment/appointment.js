@@ -8,6 +8,12 @@ const appointmentSchema = new mongoose.Schema(
       required: true,
     },
 
+    patientProfile: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "PatientProfile",
+      required: true,
+    },
+
     doctor: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Doctor",
@@ -93,7 +99,7 @@ const appointmentSchema = new mongoose.Schema(
 
     reason: String,
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 // Chỉ unique khi txnRef là string thật sự
@@ -104,7 +110,7 @@ appointmentSchema.index(
     partialFilterExpression: {
       "payment.txnRef": { $type: "string" },
     },
-  }
+  },
 );
 
 export default mongoose.model("Appointment", appointmentSchema);
