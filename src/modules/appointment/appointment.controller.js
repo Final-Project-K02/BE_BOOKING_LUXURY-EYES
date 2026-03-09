@@ -1,22 +1,44 @@
-import Appointment from "./appointment.js";
-import Schedule from "../schedule/doctorSchedule.js";
 import createError from "../../shared/utils/createError.js";
 import createResponse from "../../shared/utils/createResponse.js";
 import handleAsync from "../../shared/utils/handleAsync.js";
 import Doctor from "../doctor/doctor.js";
+import Schedule from "../schedule/doctorSchedule.js";
+import Appointment from "./appointment.js";
 import PatientProfile from "../patient-profile/patient-profile.model.js";
-import dayjs from "dayjs";
+
+const expirePendingAppointments = async (filter = {}) => {
+  await Appointment.updateMany(
+    {
+      ...filter,
+      status: "PENDING",
+      "payment.paymentStatus": { $in: ["UNPAID", "PENDING", "FAILED"] },
+      "payment.expireAt": { $ne: null, $lte: new Date() },
+    },
+    {
+      $set: {
+        status: "CANCELED",
+        "payment.paymentStatus": "EXPIRED",
+      },
+    },
+  );
+};
 
 export const getAppointmentsByDoctor = handleAsync(async (req, res) => {
-  const { doctorId, scheduleId, dateTime, time, room } = req.body;
+  const { doctorId } = req.query;
 
   if (!doctorId) {
     return createError(res, 400, "doctorId is required");
   }
 
+  await expirePendingAppointments({ doctor: doctorId });
+
   const data = await Appointment.find({ doctor: doctorId })
-    .populate("patientProfile", "fullName phone")
-    .populate("doctor", "name avatar experience_year")
+    .populate(
+      "patientProfile",
+      "fullName phone gender dateOfBirth identityCard email address",
+    )
+    .populate("doctor", "name fullName avatar experience_year")
+
     .sort({ dateTime: 1 });
 
   createResponse(res, 200, "Success", data);
@@ -30,9 +52,15 @@ export const getAppointments = handleAsync(async (req, res) => {
   if (doctorId) filter.doctor = doctorId;
   if (scheduleId) filter.scheduleId = scheduleId;
 
+  await expirePendingAppointments(filter);
+
   const data = await Appointment.find(filter)
-    .populate("doctor", "name avatar experience_year")
-    .populate("patientProfile", "fullName phone")
+    .populate("doctor", "name fullName avatar experience_year")
+    .populate(
+      "patientProfile",
+      "fullName phone gender dateOfBirth identityCard email address",
+    )
+
     .sort({ createdAt: -1 });
 
   createResponse(res, 200, "Success", data);
@@ -40,7 +68,60 @@ export const getAppointments = handleAsync(async (req, res) => {
 
 export const createAppointment = async (req, res) => {
   try {
-    const { doctorId, scheduleId, dateTime, time, room } = req.body;
+    const {
+      doctorId,
+      scheduleId,
+      dateTime,
+      time,
+      room,
+      totalAmount,
+      location,
+      symptoms,
+      patientProfileId,
+      patientProfile,
+    } = req.body;
+
+    const hasProvidedProfile =
+      patientProfileId !== undefined && patientProfileId !== null
+        ? true
+        : patientProfile !== undefined && patientProfile !== null;
+
+    let selectedPatientProfileId = patientProfileId || patientProfile;
+    if (selectedPatientProfileId && typeof selectedPatientProfileId === "object") {
+      selectedPatientProfileId =
+        selectedPatientProfileId._id ||
+        selectedPatientProfileId.id ||
+        selectedPatientProfileId.profileId ||
+        null;
+    }
+
+    // If client explicitly sends patient profile data, do not silently fallback.
+    if (hasProvidedProfile && !selectedPatientProfileId) {
+      return createError(res, 400, "patientProfileId không hợp lệ");
+    }
+
+    if (!selectedPatientProfileId) {
+      const latestProfile = await PatientProfile.findOne({
+        userId: req.user._id,
+      }).sort({ createdAt: -1 });
+      if (!latestProfile) {
+        return createError(
+          res,
+          400,
+          "Vui lòng tạo hồ sơ bệnh nhân trước khi đặt lịch",
+        );
+      }
+      selectedPatientProfileId = latestProfile._id;
+    }
+
+    const existingPatientProfile = await PatientProfile.findOne({
+      _id: selectedPatientProfileId,
+      userId: req.user._id,
+    });
+
+    if (!existingPatientProfile) {
+      return createError(res, 404, "Không tìm thấy hồ sơ bệnh nhân");
+    }
 
     const doctor = await Doctor.findById(doctorId);
     if (!doctor) {
@@ -53,78 +134,9 @@ export const createAppointment = async (req, res) => {
         .json({ message: "Bác sĩ hiện không nhận lịch khám" });
     }
 
-    const patientId = req.user._id;
-    let patientProfileId = req.body.patientProfile || req.body.patientProfileId;
-
-    // if no profile id provided, fallback to the most recent profile of the user
-    if (!patientProfileId) {
-      const recent = await PatientProfile.findOne({ userId: patientId }).sort({
-        createdAt: -1,
-      });
-      if (!recent) {
-        return res.status(400).json({
-          message:
-            "Bạn chưa có hồ sơ bệnh nhân, vui lòng tạo hồ sơ trước khi đặt lịch",
-        });
-      }
-      patientProfileId = recent._id;
-    }
-
-    const profile = await PatientProfile.findById(patientProfileId);
-    if (!profile)
-      return res
-        .status(404)
-        .json({ message: "Không tìm thấy hồ sơ bệnh nhân" });
-    if (profile.userId.toString() !== patientId.toString()) {
-      return res
-        .status(403)
-        .json({ message: "Hồ sơ bệnh nhân không thuộc người dùng" });
-    }
-
-    // Prevent the same patientProfile booking the same date + time (any doctor)
-    const dayStart = dayjs(dateTime).startOf("day").toDate();
-    const dayEnd = dayjs(dateTime).endOf("day").toDate();
-
-    const existing = await Appointment.findOne({
-      patientProfile: patientProfileId,
-      dateTime: { $gte: dayStart, $lte: dayEnd },
-      time,
-      status: { $nin: ["CANCELED", "DONE"] },
-    });
-
-    if (existing) {
-      return res
-        .status(400)
-        .json({ message: "Bạn đã có lịch khám cùng thời gian" });
-    }
-
-    // Check schedule and slot availability
-    const schedule = await Schedule.findById(scheduleId);
-    if (!schedule) {
-      return res.status(404).json({ message: "Không tìm thấy lịch" });
-    }
-
-    const slot = schedule.timeSlots.find(
-      (s) => dayjs(s.date).isSame(dayjs(dateTime), "day") && s.time === time,
-    );
-
-    if (!slot) {
-      return res.status(400).json({ message: "Khung giờ không tồn tại" });
-    }
-
-    if (slot.status !== "AVAILABLE" || slot.capacity <= 0) {
-      return res.status(400).json({ message: "Khung giờ đã được đặt" });
-    }
-
-    // reserve slot: decrement capacity or mark as BOOKED
-    if (slot.capacity && slot.capacity > 1) {
-      slot.capacity = slot.capacity - 1;
-    } else {
-      slot.capacity = 0;
-      slot.status = "BOOKED";
-    }
-
-    await schedule.save();
+    const total = Number(totalAmount || 0);
+    const depositAmount = Math.ceil(total * 0.4);
+    const expireAt = new Date(Date.now() + 5 * 60 * 1000);
 
     const appointment = await Appointment.create({
       doctor: doctorId,
@@ -132,10 +144,20 @@ export const createAppointment = async (req, res) => {
       dateTime,
       time,
       room,
-      patient: patientId,
-      patientProfile: patientProfileId,
-      payment: { totalAmount: doctor.price },
+      location: location || "",
+      symptoms: symptoms || "",
+      patient: req.user._id,
+      patientProfile: existingPatientProfile._id,
+
       status: "PENDING",
+      payment: {
+        totalAmount: total,
+        depositRate: 40,
+        depositAmount,
+        paymentMethod: "VNPAY",
+        paymentStatus: "UNPAID",
+        expireAt,
+      },
     });
 
     const populated = await Appointment.findById(appointment._id)
@@ -145,7 +167,7 @@ export const createAppointment = async (req, res) => {
     return res.status(201).json({
       message: "Đặt lịch thành công",
       data: populated,
-      selectedPatientProfileId: patientProfileId,
+      selectedPatientProfileId,
     });
   } catch (error) {
     return res.status(500).json({ message: error.message });
@@ -154,7 +176,7 @@ export const createAppointment = async (req, res) => {
 
 export const updateAppointmentStatus = handleAsync(async (req, res) => {
   const { id } = req.params;
-  const { status } = req.body;
+  const { status, reason } = req.body;
 
   const appointment = await Appointment.findById(id);
   if (!appointment) return createError(res, 404, "Appointment not found");
@@ -175,9 +197,17 @@ export const updateAppointmentStatus = handleAsync(async (req, res) => {
   }
 
   appointment.status = status;
-  await appointment.save();
+
+  if (reason) {
+    appointment.reason = reason;
+  }
 
   if (status === "CANCELED") {
+    if (appointment.payment?.paymentStatus !== "PAID") {
+      appointment.payment.paymentStatus =
+        appointment.payment.paymentStatus === "EXPIRED" ? "EXPIRED" : "FAILED";
+    }
+
     const schedule = await Schedule.findById(appointment.scheduleId);
     if (schedule) {
       const slot = schedule.timeSlots.find((s) => s.time === appointment.time);
@@ -186,9 +216,7 @@ export const updateAppointmentStatus = handleAsync(async (req, res) => {
     }
   }
 
-  const populated = await Appointment.findById(appointment._id)
-    .populate("patientProfile", "fullName phone")
-    .populate("doctor", "name avatar experience_year");
+  await appointment.save();
 
-  createResponse(res, 200, "Update status success", populated);
+  createResponse(res, 200, "Update status success", appointment);
 });

@@ -25,6 +25,8 @@
   "homepage": "https://github.com/hunganhkieu/BE_BOOKING_LUXURY-EYES#readme",
   "dependencies": {
     "bcryptjs": "^3.0.3",
+    "cloudflare": "^5.2.0",
+    "cloudflared": "^0.7.1",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "dayjs": "^1.11.19",
@@ -34,6 +36,7 @@
     "mongoose": "^9.1.4",
     "morgan": "^1.10.1",
     "nodemailer": "^7.0.12",
+    "qs": "^6.15.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {

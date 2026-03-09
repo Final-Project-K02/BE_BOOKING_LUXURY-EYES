@@ -8,7 +8,7 @@ import { checkAuth } from "../shared/middlewares/checkAuth.js";
 import { checkPermission } from "../shared/middlewares/checkPermission.js";
 import patientProfileRoutes from "../modules/patient-profile/patient-profile.routes.js";
 import appointmentRouter from "../modules/appointment/appointment.routes.js";
-
+import paymentRouter from "../modules/payment/payment.routes.js";
 const router = Router();
 
 router.use("/auth", authRoutes);
@@ -17,6 +17,6 @@ router.use("/doctors", doctorRouter);
 router.use("/schedules", scheduleRouter);
 router.use("/appointments", appointmentRouter);
 router.get("/admin/doctors", checkAuth, checkPermission, getDoctorsByAdmin);
-
+router.use("/payments", paymentRouter);
 router.use("/patient-profile", patientProfileRoutes);
 export default router;
