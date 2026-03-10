@@ -7,13 +7,26 @@ import {
   sendForgotPassword,
 } from "./auth.controller.js";
 import validBodyRequest from "../../shared/middlewares/validBodyRequest.js";
-import { loginSchema, registerSchema } from "./auth.schema.js";
+import {
+  forgotPasswordSchema,
+  loginSchema,
+  registerSchema,
+  sendForgotPasswordSchema,
+} from "./auth.schema.js";
 
 const authRoutes = Router();
 authRoutes.post("/register", validBodyRequest(registerSchema), register);
 authRoutes.post("/login", validBodyRequest(loginSchema), login);
 authRoutes.post("/refresh-token", refreshToken);
-authRoutes.post("/send-forgot", sendForgotPassword);
-authRoutes.post("/forgot-password", forgotPassword);
+authRoutes.post(
+  "/send-forgot",
+  validBodyRequest(sendForgotPasswordSchema),
+  sendForgotPassword,
+);
+authRoutes.post(
+  "/forgot-password",
+  validBodyRequest(forgotPasswordSchema),
+  forgotPassword,
+);
 
 export default authRoutes;

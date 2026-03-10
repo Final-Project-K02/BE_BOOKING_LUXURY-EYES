@@ -22,3 +22,18 @@ export const loginSchema = z.object({
       "Mật khẩu phải chứa ít nhất 1 chữ hoa, 1 chữ thường, 1 số và 1 ký tự đặc biệt",
     ),
 });
+
+export const sendForgotPasswordSchema = z.object({
+  email: z.string().min(1, "Email là bắt buộc").email("Email không hợp lệ"),
+});
+
+export const forgotPasswordSchema = z.object({
+  token: z.string().min(1, "Token là bắt buộc"),
+  newPassword: z
+    .string()
+    .min(8, "Mật khẩu phải có ít nhất 8 ký tự")
+    .regex(
+      /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&.])[A-Za-z\d@$!%*?&.]+$/,
+      "Mật khẩu phải chứa ít nhất 1 chữ hoa, 1 chữ thường, 1 số và 1 ký tự đặc biệt",
+    ),
+});

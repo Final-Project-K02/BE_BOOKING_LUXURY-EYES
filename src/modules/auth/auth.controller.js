@@ -146,11 +146,12 @@ export const sendForgotPassword = handleAsync(async (req, res) => {
 export const forgotPassword = handleAsync(async (req, res) => {
   const { token, newPassword } = req.body;
   if (!token) return createError(res, 401, "INVALID TOKEN");
+  if (!newPassword) return createError(res, 400, "newPassword là bắt buộc");
 
   const user = await User.findOne({ forgotToken: token }).select("+password");
   if (!user) return createError(res, 400, "Token không hợp lệ hoặc đã hết hạn");
 
-  const decoded = jwt.verify(token, JWT_FORGOT_PASSWORD);
+  jwt.verify(token, JWT_FORGOT_PASSWORD);
 
   const hash = await bcrypt.hash(newPassword, 10);
 

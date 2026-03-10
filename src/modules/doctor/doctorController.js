@@ -32,8 +32,10 @@ export const getDoctors = async (req, res) => {
       createdAtFrom,
       createdAtTo,
       page = 1,
-      limit = 10,
     } = req.query;
+
+    const pageNum = parseInt(page, 10) || 1;
+    const limitNum = 5;
 
     const filters = {
       is_active: true,
@@ -89,9 +91,6 @@ export const getDoctors = async (req, res) => {
       );
 
       if (!doctorIds.length) {
-        const pageNum = parseInt(page, 10) || 1;
-        const limitNum = parseInt(limit, 10) || 10;
-
         return res.status(200).json({
           data: [],
           meta: {
@@ -112,8 +111,8 @@ export const getDoctors = async (req, res) => {
       searchFields: ["name"],
       sort: "createdAt",
       order: "desc",
-      page,
-      limit,
+      page: pageNum,
+      limit: limitNum,
     });
 
     return res.status(200).json(result);
@@ -195,10 +194,7 @@ export const deleteDoctor = async (req, res) => {
 
     const hasAppointment = await Appointment.exists({
       doctor: doctor._id,
-      status: { $in: [ "PENDING",
-        "CONFIRM",
-        "CHECKIN",
-        "REQUEST-CANCELED",] },
+      status: { $in: ["PENDING", "CONFIRM", "CHECKIN", "REQUEST-CANCELED"] },
     });
 
     if (hasAppointment) {
@@ -237,11 +233,7 @@ export const toggleDoctorStatus = async (req, res) => {
     if (doctor.is_active) {
       const hasAppointment = await Appointment.exists({
         doctor: doctor._id,
-        status: { $in: [ 
-          "PENDING",
-        "CONFIRM",
-        "CHECKIN",
-        "REQUEST-CANCELED",] },
+        status: { $in: ["PENDING", "CONFIRM", "CHECKIN", "REQUEST-CANCELED"] },
       });
 
       if (hasAppointment) {
@@ -251,8 +243,7 @@ export const toggleDoctorStatus = async (req, res) => {
       }
 
       doctor.is_active = false;
-    }
-    else {
+    } else {
       doctor.is_active = true;
     }
 

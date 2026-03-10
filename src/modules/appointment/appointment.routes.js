@@ -11,8 +11,9 @@ import {
   updateAppointmentStatusSchema,
 } from "./appointment.schema.js";
 import { validate } from "../../middleware/validate.js";
-import { check } from "zod";
 import { checkAuth } from "../../shared/middlewares/checkAuth.js";
+import { checkPermission } from "../../shared/middlewares/checkPermission.js";
+import { RoleEnum } from "../../shared/constant/enum.js";
 
 const appointmentRouter = express.Router();
 
@@ -21,7 +22,7 @@ appointmentRouter.get("/doctor", getAppointmentsByDoctor);
 appointmentRouter.get("/", getAppointments);
 appointmentRouter.post(
   "/",
-  checkAuth,
+  checkPermission([RoleEnum.USER]),
   validate(createAppointmentSchema),
   createAppointment,
 );
