@@ -6,20 +6,54 @@ import Schedule from "../schedule/doctorSchedule.js";
 import Appointment from "./appointment.js";
 import PatientProfile from "../patient-profile/patient-profile.model.js";
 
+const ACTIVE_APPOINTMENT_STATUSES = [
+  "PENDING",
+  "CONFIRM",
+  "CHECKIN",
+  "REQUEST-CANCELED",
+];
+
+const releaseScheduleSlot = async (scheduleId, time) => {
+  if (!scheduleId || !time) return;
+
+  await Schedule.updateOne(
+    {
+      _id: scheduleId,
+      timeSlots: { $elemMatch: { time, status: "BOOKED" } },
+    },
+    {
+      $set: { "timeSlots.$.status": "AVAILABLE" },
+    },
+  );
+};
+
 const expirePendingAppointments = async (filter = {}) => {
-  await Appointment.updateMany(
+  const expiredAppointments = await Appointment.find(
     {
       ...filter,
       status: "PENDING",
       "payment.paymentStatus": { $in: ["UNPAID", "PENDING", "FAILED"] },
       "payment.expireAt": { $ne: null, $lte: new Date() },
     },
+    { _id: 1, scheduleId: 1, time: 1 },
+  ).lean();
+
+  if (expiredAppointments.length === 0) return;
+
+  await Appointment.updateMany(
+    { _id: { $in: expiredAppointments.map((item) => item._id) } },
     {
       $set: {
         status: "CANCELED",
         "payment.paymentStatus": "EXPIRED",
       },
     },
+  );
+
+  await Promise.all(
+    expiredAppointments.map((item) =>
+      releaseScheduleSlot(item.scheduleId, item.time),
+    ),
   );
 };
 
@@ -81,13 +115,22 @@ export const createAppointment = async (req, res) => {
       patientProfile,
     } = req.body;
 
+    const normalizedDateTime = new Date(dateTime);
+
+    if (!dateTime || Number.isNaN(normalizedDateTime.getTime())) {
+      return createError(res, 400, "dateTime không hợp lệ");
+    }
+
     const hasProvidedProfile =
       patientProfileId !== undefined && patientProfileId !== null
         ? true
         : patientProfile !== undefined && patientProfile !== null;
 
     let selectedPatientProfileId = patientProfileId || patientProfile;
-    if (selectedPatientProfileId && typeof selectedPatientProfileId === "object") {
+    if (
+      selectedPatientProfileId &&
+      typeof selectedPatientProfileId === "object"
+    ) {
       selectedPatientProfileId =
         selectedPatientProfileId._id ||
         selectedPatientProfileId.id ||
@@ -134,31 +177,77 @@ export const createAppointment = async (req, res) => {
         .json({ message: "Bác sĩ hiện không nhận lịch khám" });
     }
 
+    const hasSameTimeAppointment = await Appointment.exists({
+      patient: req.user._id,
+      dateTime: normalizedDateTime,
+      time: time,
+      status: { $in: ACTIVE_APPOINTMENT_STATUSES },
+    });
+
+    if (hasSameTimeAppointment) {
+      return createError(
+        res,
+        400,
+        "Bạn đã có lịch hẹn khác cùng thời điểm này",
+      );
+    }
+
+    const reservedSchedule = await Schedule.findOneAndUpdate(
+      {
+        _id: scheduleId,
+        doctorId,
+        timeSlots: { $elemMatch: { time, status: "AVAILABLE" } },
+      },
+      {
+        $set: { "timeSlots.$.status": "BOOKED" },
+      },
+      { new: true },
+    );
+
+    if (!reservedSchedule) {
+      return createError(res, 409, "Khung giờ này đã có người đặt");
+    }
+
     const total = Number(totalAmount || 0);
     const depositAmount = Math.ceil(total * 0.4);
     const expireAt = new Date(Date.now() + 5 * 60 * 1000);
 
-    const appointment = await Appointment.create({
-      doctor: doctorId,
-      scheduleId,
-      dateTime,
-      time,
-      room,
-      location: location || "",
-      symptoms: symptoms || "",
-      patient: req.user._id,
-      patientProfile: existingPatientProfile._id,
+    let appointment;
+    try {
+      appointment = await Appointment.create({
+        doctor: doctorId,
+        scheduleId,
+        dateTime: normalizedDateTime,
+        time,
+        room,
+        location: location || "",
+        symptoms: symptoms || "",
+        patient: req.user._id,
+        patientProfile: existingPatientProfile._id,
 
-      status: "PENDING",
-      payment: {
-        totalAmount: total,
-        depositRate: 40,
-        depositAmount,
-        paymentMethod: "VNPAY",
-        paymentStatus: "UNPAID",
-        expireAt,
-      },
-    });
+        status: "PENDING",
+        payment: {
+          totalAmount: total,
+          depositRate: 40,
+          depositAmount,
+          paymentMethod: "VNPAY",
+          paymentStatus: "UNPAID",
+          expireAt,
+        },
+      });
+    } catch (createErr) {
+      await releaseScheduleSlot(scheduleId, time);
+
+      if (createErr?.code === 11000) {
+        return createError(
+          res,
+          409,
+          "Khung giờ này đã có người đặt hoặc bạn đã đặt lịch trùng giờ",
+        );
+      }
+
+      throw createErr;
+    }
 
     const populated = await Appointment.findById(appointment._id)
       .populate("patientProfile", "fullName phone")

@@ -1,11 +1,26 @@
 import Appointment from "../appointment/appointment.js";
 import Doctor from "../doctor/doctor.js";
+import Schedule from "../schedule/doctorSchedule.js";
 import {
   createSecureHash,
   buildQuery,
   formatVnpDate,
   getClientIp,
 } from "../../shared/utils/vnpay.util.js";
+
+const releaseScheduleSlot = async (scheduleId, time) => {
+  if (!scheduleId || !time) return;
+
+  await Schedule.updateOne(
+    {
+      _id: scheduleId,
+      timeSlots: { $elemMatch: { time, status: "BOOKED" } },
+    },
+    {
+      $set: { "timeSlots.$.status": "AVAILABLE" },
+    },
+  );
+};
 
 export const createVnpayLinkForAppointment = async (req, res) => {
   try {
@@ -38,6 +53,7 @@ export const createVnpayLinkForAppointment = async (req, res) => {
       appointment.status = "CANCELED";
       appointment.payment.paymentStatus = "EXPIRED";
       await appointment.save();
+      await releaseScheduleSlot(appointment.scheduleId, appointment.time);
 
       return res.status(400).json({
         message: "Lịch đã hết hạn thanh toán",
@@ -274,6 +290,7 @@ export const vnpayIpn = async (req, res) => {
     } else if (isExpired) {
       appointment.payment.paymentStatus = "EXPIRED";
       appointment.status = "CANCELED";
+      await releaseScheduleSlot(appointment.scheduleId, appointment.time);
     } else {
       // cho phép thanh toán lại trong thời gian còn hạn
       appointment.payment.paymentStatus = "UNPAID";
@@ -325,12 +342,14 @@ export const vnpayReturn = async (req, res) => {
 
       if (success) {
         appointment.payment.paymentStatus = "PAID";
-        appointment.payment.vnpTransactionNo = inputData.vnp_TransactionNo || null;
+        appointment.payment.vnpTransactionNo =
+          inputData.vnp_TransactionNo || null;
         appointment.payment.paidAt = now;
         appointment.status = "CONFIRM";
       } else if (isExpired) {
         appointment.payment.paymentStatus = "EXPIRED";
         appointment.status = "CANCELED";
+        await releaseScheduleSlot(appointment.scheduleId, appointment.time);
       } else {
         appointment.payment.paymentStatus = "UNPAID";
         appointment.status = "PENDING";

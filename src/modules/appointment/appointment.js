@@ -113,4 +113,24 @@ appointmentSchema.index(
   },
 );
 
+appointmentSchema.index(
+  { scheduleId: 1, dateTime: 1, time: 1, status: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      status: { $in: ["PENDING", "CONFIRM", "CHECKIN", "REQUEST-CANCELED"] },
+    },
+  },
+);
+
+appointmentSchema.index(
+  { patient: 1, dateTime: 1, time: 1, status: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      status: { $in: ["PENDING", "CONFIRM", "CHECKIN", "REQUEST-CANCELED"] },
+    },
+  },
+);
+
 export default mongoose.model("Appointment", appointmentSchema);
