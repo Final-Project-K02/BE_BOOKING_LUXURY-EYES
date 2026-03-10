@@ -290,6 +290,8 @@ export const vnpayIpn = async (req, res) => {
     } else if (isExpired) {
       appointment.payment.paymentStatus = "EXPIRED";
       appointment.status = "CANCELED";
+      appointment.canceledBy = "clinic";
+      appointment.canceledAt = now;
       await releaseScheduleSlot(appointment.scheduleId, appointment.time);
     } else {
       // cho phép thanh toán lại trong thời gian còn hạn
@@ -349,6 +351,8 @@ export const vnpayReturn = async (req, res) => {
       } else if (isExpired) {
         appointment.payment.paymentStatus = "EXPIRED";
         appointment.status = "CANCELED";
+        appointment.canceledBy = "clinic";
+        appointment.canceledAt = now;
         await releaseScheduleSlot(appointment.scheduleId, appointment.time);
       } else {
         appointment.payment.paymentStatus = "UNPAID";

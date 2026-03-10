@@ -5,6 +5,7 @@ import Doctor from "../doctor/doctor.js";
 import Schedule from "../schedule/doctorSchedule.js";
 import Appointment from "./appointment.js";
 import PatientProfile from "../patient-profile/patient-profile.model.js";
+import { RoleEnum } from "../../shared/constant/enum.js";
 
 const ACTIVE_APPOINTMENT_STATUSES = [
   "PENDING",
@@ -40,12 +41,16 @@ const expirePendingAppointments = async (filter = {}) => {
 
   if (expiredAppointments.length === 0) return;
 
+  const now = new Date();
+
   await Appointment.updateMany(
     { _id: { $in: expiredAppointments.map((item) => item._id) } },
     {
       $set: {
         status: "CANCELED",
         "payment.paymentStatus": "EXPIRED",
+        canceledBy: "clinic",
+        canceledAt: now,
       },
     },
   );
@@ -177,6 +182,45 @@ export const createAppointment = async (req, res) => {
         .json({ message: "Bác sĩ hiện không nhận lịch khám" });
     }
 
+    const startOfMonth = new Date();
+    startOfMonth.setDate(1);
+    startOfMonth.setHours(0, 0, 0, 0);
+
+    const canceledCountThisMonth = await Appointment.countDocuments({
+      patient: req.user._id,
+      status: "CANCELED",
+      $and: [
+        {
+          $or: [
+            { canceledBy: "patient" },
+            { canceledBy: { $exists: false } },
+            { canceledBy: null },
+          ],
+        },
+        {
+          $or: [
+            { canceledAt: { $gte: startOfMonth } },
+            {
+              canceledAt: { $in: [null, undefined] },
+              updatedAt: { $gte: startOfMonth },
+            },
+          ],
+        },
+      ],
+    });
+
+    console.log(
+      `[CREATE APPOINTMENT] User ${req.user._id} - Canceled count: ${canceledCountThisMonth}`,
+    );
+
+    if (canceledCountThisMonth >= 4) {
+      return createError(
+        res,
+        403,
+        "Bạn đã hủy 4 lịch trong tháng này. Không thể đặt lịch mới.",
+      );
+    }
+
     const hasSameTimeAppointment = await Appointment.exists({
       patient: req.user._id,
       dateTime: normalizedDateTime,
@@ -263,17 +307,159 @@ export const createAppointment = async (req, res) => {
   }
 };
 
+export const requestCancelAppointment = handleAsync(async (req, res) => {
+  const { id } = req.params;
+  const { reason } = req.body;
+
+  const appointment = await Appointment.findOne({
+    _id: id,
+    patient: req.user._id,
+  });
+
+  if (!appointment) {
+    return createError(res, 404, "Không tìm thấy lịch hẹn");
+  }
+
+  if (!["PENDING", "CONFIRM"].includes(appointment.status)) {
+    return createError(
+      res,
+      400,
+      "Chỉ có thể hủy lịch ở trạng thái PENDING hoặc CONFIRM",
+    );
+  }
+
+  const startOfMonth = new Date();
+  startOfMonth.setDate(1);
+  startOfMonth.setHours(0, 0, 0, 0);
+
+  const canceledCountThisMonth = await Appointment.countDocuments({
+    patient: req.user._id,
+    status: "CANCELED",
+    $and: [
+      {
+        $or: [
+          { canceledBy: "patient" },
+          { canceledBy: { $exists: false } },
+          { canceledBy: null },
+        ],
+      },
+      {
+        $or: [
+          { canceledAt: { $gte: startOfMonth } },
+          {
+            canceledAt: { $in: [null, undefined] },
+            updatedAt: { $gte: startOfMonth },
+          },
+        ],
+      },
+    ],
+  });
+
+  console.log(
+    `[CANCEL REQUEST] User ${req.user._id} - Current canceled count: ${canceledCountThisMonth}`,
+  );
+
+  if (canceledCountThisMonth >= 4) {
+    return createError(
+      res,
+      400,
+      "Bạn đã hủy 4 lịch trong tháng này. Không thể hủy thêm.",
+    );
+  }
+
+  appointment.status = "CANCELED";
+  appointment.canceledBy = "patient";
+  appointment.canceledAt = new Date();
+  appointment.reason = reason || "Người dùng hủy";
+
+  // User hủy = KHÔNG hoàn cọc (giữ nguyên PAID nếu đã thanh toán)
+  if (appointment.payment?.paymentStatus !== "PAID") {
+    appointment.payment.paymentStatus =
+      appointment.payment.paymentStatus === "EXPIRED" ? "EXPIRED" : "FAILED";
+  }
+
+  await releaseScheduleSlot(appointment.scheduleId, appointment.time);
+  await appointment.save();
+
+  const message =
+    appointment.payment?.paymentStatus === "PAID"
+      ? "Hủy lịch thành công. Tiền cọc sẽ KHÔNG được hoàn lại."
+      : "Hủy lịch thành công.";
+
+  createResponse(res, 200, message, {
+    appointment,
+    canceledCountThisMonth: canceledCountThisMonth + 1,
+    remainingCancels: Math.max(0, 4 - (canceledCountThisMonth + 1)),
+  });
+});
+
 export const updateAppointmentStatus = handleAsync(async (req, res) => {
   const { id } = req.params;
-  const { status, reason } = req.body;
+  const { status, reason, paymentStatus } = req.body;
+
+  if (req.user?.role === RoleEnum.USER) {
+    if (status !== "CANCELED") {
+      return createError(res, 403, "Bạn chỉ có thể hủy lịch");
+    }
+
+    if (paymentStatus) {
+      return createError(
+        res,
+        403,
+        "Bạn không có quyền cập nhật trạng thái hoàn tiền",
+      );
+    }
+
+    return requestCancelAppointment(req, res);
+  }
 
   const appointment = await Appointment.findById(id);
   if (!appointment) return createError(res, 404, "Appointment not found");
 
+  if (paymentStatus) {
+    if (appointment.status !== "CANCELED") {
+      return createError(
+        res,
+        400,
+        "Chỉ có thể cập nhật trạng thái hoàn tiền khi lịch đã hủy",
+      );
+    }
+
+    const currentPaymentStatus = appointment.payment?.paymentStatus || "UNPAID";
+    const REFUND_FLOW = {
+      PAID: ["REFUND_PENDING"],
+      REFUND_PENDING: ["REFUNDED"],
+      REFUNDED: [],
+    };
+
+    const allowedPaymentTransitions = REFUND_FLOW[currentPaymentStatus] || [];
+    if (!allowedPaymentTransitions.includes(paymentStatus)) {
+      return createError(res, 400, "Invalid payment status transition");
+    }
+
+    appointment.payment.paymentStatus = paymentStatus;
+    if (reason) {
+      appointment.reason = reason;
+    }
+
+    await appointment.save();
+
+    const refundMessage =
+      paymentStatus === "REFUNDED"
+        ? "Đã xác nhận hoàn tiền thành công"
+        : "Đã chuyển trạng thái chờ hoàn tiền";
+
+    return createResponse(res, 200, refundMessage, appointment);
+  }
+
+  if (!status) {
+    return createError(res, 400, "status is required");
+  }
+
   const STATUS_FLOW = {
     PENDING: ["CONFIRM", "CANCELED"],
     CONFIRM: ["CHECKIN", "CANCELED"],
-    CHECKIN: ["DONE"],
+    CHECKIN: ["DONE", "CANCELED"],
     DONE: [],
     CANCELED: [],
     "REQUEST-CANCELED": ["CANCELED"],
@@ -292,20 +478,26 @@ export const updateAppointmentStatus = handleAsync(async (req, res) => {
   }
 
   if (status === "CANCELED") {
-    if (appointment.payment?.paymentStatus !== "PAID") {
+    appointment.canceledBy = "clinic";
+    appointment.canceledAt = new Date();
+
+    if (appointment.payment?.paymentStatus === "PAID") {
+      appointment.payment.paymentStatus = "REFUND_PENDING";
+    } else {
       appointment.payment.paymentStatus =
         appointment.payment.paymentStatus === "EXPIRED" ? "EXPIRED" : "FAILED";
     }
 
-    const schedule = await Schedule.findById(appointment.scheduleId);
-    if (schedule) {
-      const slot = schedule.timeSlots.find((s) => s.time === appointment.time);
-      if (slot) slot.status = "AVAILABLE";
-      await schedule.save();
-    }
+    await releaseScheduleSlot(appointment.scheduleId, appointment.time);
   }
 
   await appointment.save();
 
-  createResponse(res, 200, "Update status success", appointment);
+  const message =
+    status === "CANCELED" &&
+    appointment.payment?.paymentStatus === "REFUND_PENDING"
+      ? "Hủy lịch thành công. Lịch đã chuyển sang trạng thái chờ hoàn tiền."
+      : "Update status success";
+
+  createResponse(res, 200, message, appointment);
 });

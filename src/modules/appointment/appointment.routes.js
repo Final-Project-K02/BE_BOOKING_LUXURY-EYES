@@ -4,6 +4,7 @@ import {
   createAppointment,
   updateAppointmentStatus,
   getAppointmentsByDoctor,
+  requestCancelAppointment,
 } from "./appointment.controller.js";
 
 import {
@@ -26,8 +27,14 @@ appointmentRouter.post(
   validate(createAppointmentSchema),
   createAppointment,
 );
+appointmentRouter.post(
+  "/:id/cancel",
+  checkPermission([RoleEnum.USER]),
+  requestCancelAppointment,
+);
 appointmentRouter.patch(
   "/:id",
+  checkPermission([RoleEnum.ADMIN, RoleEnum.DOCTOR, RoleEnum.USER]),
   validate(updateAppointmentStatusSchema),
   updateAppointmentStatus,
 );

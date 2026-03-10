@@ -65,7 +65,15 @@ const appointmentSchema = new mongoose.Schema(
       },
       paymentStatus: {
         type: String,
-        enum: ["UNPAID", "PENDING", "PAID", "FAILED", "EXPIRED"],
+        enum: [
+          "UNPAID",
+          "PENDING",
+          "PAID",
+          "FAILED",
+          "EXPIRED",
+          "REFUND_PENDING",
+          "REFUNDED",
+        ],
         default: "UNPAID",
       },
       txnRef: {
@@ -98,6 +106,17 @@ const appointmentSchema = new mongoose.Schema(
     },
 
     reason: String,
+
+    canceledBy: {
+      type: String,
+      enum: ["patient", "clinic"],
+      default: null,
+    },
+
+    canceledAt: {
+      type: Date,
+      default: null,
+    },
   },
   { timestamps: true },
 );
