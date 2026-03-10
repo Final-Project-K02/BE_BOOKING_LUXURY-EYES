@@ -9,6 +9,8 @@ import { checkPermission } from "../shared/middlewares/checkPermission.js";
 import patientProfileRoutes from "../modules/patient-profile/patient-profile.routes.js";
 import appointmentRouter from "../modules/appointment/appointment.routes.js";
 import paymentRouter from "../modules/payment/payment.routes.js";
+import uploadRouter from "../modules/upload/upload.routes.js";
+
 const router = Router();
 
 router.use("/auth", authRoutes);
@@ -18,5 +20,6 @@ router.use("/schedules", scheduleRouter);
 router.use("/appointments", appointmentRouter);
 router.get("/admin/doctors", checkAuth, checkPermission, getDoctorsByAdmin);
 router.use("/payments", paymentRouter);
+router.use("/uploads", uploadRouter);
 router.use("/patient-profile", patientProfileRoutes);
 export default router;

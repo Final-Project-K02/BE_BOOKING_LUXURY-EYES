@@ -307,3 +307,28 @@ export const getDoctorsByAdmin = async (req, res) => {
     });
   }
 };
+
+
+export const updateDoctorAvatar = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { avatar } = req.body;
+
+    if (!avatar || typeof avatar !== "string") {
+      return res.status(400).json({ message: "avatar is required" });
+    }
+
+    const doctor = await Doctor.findById(id);
+    if (!doctor) return res.status(404).json({ message: "Doctor not found" });
+
+    doctor.avatar = avatar;
+    await doctor.save();
+
+    return res.status(200).json({
+      message: "Cập nhật avatar thành công",
+      data: doctor,
+    });
+  } catch (error) {
+    return res.status(500).json({ message: error.message || "Update failed" });
+  }
+};

@@ -7,6 +7,7 @@ import {
   getDoctorsByAdmin,
   toggleDoctorStatus,
   updateDoctor,
+  updateDoctorAvatar,
 } from "../doctor/doctorController.js";
 
 import { validate } from "../../middleware/validate.js";
@@ -32,4 +33,5 @@ doctorRouter.put("/:id", validate(updateDoctorSchema), updateDoctor);
 doctorRouter.delete("/:id", validate(doctorIdSchema), deleteDoctor);
 
 doctorRouter.patch("/:id/status", toggleDoctorStatus);
+doctorRouter.patch("/:id/avatar", checkAuth, checkPermission, updateDoctorAvatar);
 export default doctorRouter;
