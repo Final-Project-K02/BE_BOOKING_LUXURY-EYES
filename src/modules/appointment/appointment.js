@@ -109,7 +109,7 @@ const appointmentSchema = new mongoose.Schema(
 
     canceledBy: {
       type: String,
-      enum: ["patient", "clinic"],
+      enum: ["patient", "clinic", "system"],
       default: null,
     },
 

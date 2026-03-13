@@ -49,7 +49,7 @@ const expirePendingAppointments = async (filter = {}) => {
       $set: {
         status: "CANCELED",
         "payment.paymentStatus": "EXPIRED",
-        canceledBy: "clinic",
+        canceledBy: "system",
         canceledAt: now,
       },
     },
@@ -189,22 +189,12 @@ export const createAppointment = async (req, res) => {
     const canceledCountThisMonth = await Appointment.countDocuments({
       patient: req.user._id,
       status: "CANCELED",
-      $and: [
+      canceledBy: "patient",
+      $or: [
+        { canceledAt: { $gte: startOfMonth } },
         {
-          $or: [
-            { canceledBy: "patient" },
-            { canceledBy: { $exists: false } },
-            { canceledBy: null },
-          ],
-        },
-        {
-          $or: [
-            { canceledAt: { $gte: startOfMonth } },
-            {
-              canceledAt: { $in: [null, undefined] },
-              updatedAt: { $gte: startOfMonth },
-            },
-          ],
+          canceledAt: { $in: [null, undefined] },
+          updatedAt: { $gte: startOfMonth },
         },
       ],
     });
@@ -335,22 +325,12 @@ export const requestCancelAppointment = handleAsync(async (req, res) => {
   const canceledCountThisMonth = await Appointment.countDocuments({
     patient: req.user._id,
     status: "CANCELED",
-    $and: [
+    canceledBy: "patient",
+    $or: [
+      { canceledAt: { $gte: startOfMonth } },
       {
-        $or: [
-          { canceledBy: "patient" },
-          { canceledBy: { $exists: false } },
-          { canceledBy: null },
-        ],
-      },
-      {
-        $or: [
-          { canceledAt: { $gte: startOfMonth } },
-          {
-            canceledAt: { $in: [null, undefined] },
-            updatedAt: { $gte: startOfMonth },
-          },
-        ],
+        canceledAt: { $in: [null, undefined] },
+        updatedAt: { $gte: startOfMonth },
       },
     ],
   });

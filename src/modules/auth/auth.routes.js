@@ -2,6 +2,7 @@ import { Router } from "express";
 import {
   forgotPassword,
   login,
+  logout,
   refreshToken,
   register,
   sendForgotPassword,
@@ -17,6 +18,7 @@ import {
 const authRoutes = Router();
 authRoutes.post("/register", validBodyRequest(registerSchema), register);
 authRoutes.post("/login", validBodyRequest(loginSchema), login);
+authRoutes.post("/logout", logout);
 authRoutes.post("/refresh-token", refreshToken);
 authRoutes.post(
   "/send-forgot",
