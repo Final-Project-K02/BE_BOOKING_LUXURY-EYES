@@ -6,6 +6,10 @@ import Schedule from "../schedule/doctorSchedule.js";
 import Appointment from "./appointment.js";
 import PatientProfile from "../patient-profile/patient-profile.model.js";
 import { RoleEnum } from "../../shared/constant/enum.js";
+import {
+  sendAdminCanceledPaidAppointmentEmail,
+  sendAppointmentPaidCanceledEmail,
+} from "../mail/appointment.mail.js";
 
 const ACTIVE_APPOINTMENT_STATUSES = [
   "PENDING",
@@ -351,15 +355,28 @@ export const requestCancelAppointment = handleAsync(async (req, res) => {
   appointment.canceledBy = "patient";
   appointment.canceledAt = new Date();
   appointment.reason = reason || "Người dùng hủy";
+  const wasPaid = appointment.payment?.paymentStatus === "PAID";
 
   // User hủy = KHÔNG hoàn cọc (giữ nguyên PAID nếu đã thanh toán)
-  if (appointment.payment?.paymentStatus !== "PAID") {
+  if (!wasPaid) {
     appointment.payment.paymentStatus =
       appointment.payment.paymentStatus === "EXPIRED" ? "EXPIRED" : "FAILED";
   }
 
   await releaseScheduleSlot(appointment.scheduleId, appointment.time);
   await appointment.save();
+
+  if (wasPaid) {
+    await appointment.populate([
+      { path: "patient", select: "fullName email" },
+      { path: "patientProfile", select: "fullName email phone" },
+      { path: "doctor", select: "name" },
+    ]);
+
+    sendAppointmentPaidCanceledEmail(appointment).catch((err) => {
+      console.error("Send paid cancellation email failed:", err.message);
+    });
+  }
 
   const message =
     appointment.payment?.paymentStatus === "PAID"
@@ -451,6 +468,9 @@ export const updateAppointmentStatus = handleAsync(async (req, res) => {
     return createError(res, 400, "Invalid status transition");
   }
 
+  const previousStatus = appointment.status;
+  const wasPaidBeforeCancel = appointment.payment?.paymentStatus === "PAID";
+
   appointment.status = status;
 
   if (reason) {
@@ -472,6 +492,22 @@ export const updateAppointmentStatus = handleAsync(async (req, res) => {
   }
 
   await appointment.save();
+
+  if (
+    status === "CANCELED" &&
+    wasPaidBeforeCancel &&
+    ["CONFIRM", "CHECKIN"].includes(previousStatus)
+  ) {
+    await appointment.populate([
+      { path: "patient", select: "fullName email" },
+      { path: "patientProfile", select: "fullName" },
+      { path: "doctor", select: "name" },
+    ]);
+
+    sendAdminCanceledPaidAppointmentEmail(appointment).catch((err) => {
+      console.error("Send admin cancel paid email failed:", err.message);
+    });
+  }
 
   const message =
     status === "CANCELED" &&
