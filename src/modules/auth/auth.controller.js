@@ -77,7 +77,8 @@ export const login = handleAsync(async (req, res) => {
   res.cookie("refreshToken", refreshToken, {
     httpOnly: true, // JS Không đọc được
     secure: false, // Chỉ gửi qua https
-    sameSite: "strict", // Chống CSRF,
+    sameSite: "lax", // Chống CSRF,
+    maxAge: 7 * 24 * 60 * 60 * 1000,
   });
 
   userExist.refreshToken = refreshToken;
@@ -94,11 +95,21 @@ export const refreshToken = handleAsync(async (req, res) => {
   const refreshToken = req.cookies.refreshToken;
   if (!refreshToken) return createError(res, 401, "Unauthenticated");
 
-  const payload = jwt.verify(refreshToken, JWT_REFRESH);
+  let payload;
+  try {
+    payload = jwt.verify(refreshToken, JWT_REFRESH);
+  } catch (err) {
+    return createError(res, 401, "Refresh token expired or invalid");
+  }
   const user = await User.findOne({ refreshToken: refreshToken });
-  if (!payload || !user) return createError(res, 401, "Refresh Token invalid");
+  if (!payload || !user) {
+    res.clearCookie("refreshToken");
+    return createError(res, 401, "Refresh Token invalid");
+  }
 
-  const accessToken = jwt.sign({ _id: payload._id }, JWT_SECRET, {
+  if (user.is_locked) return createError(res, 403, "Tài khoản đã bị khóa");
+
+  const accessToken = jwt.sign({ _id: user._id, role: user.role }, JWT_SECRET, {
     expiresIn: JWT_SECRET_IN,
   });
 
@@ -111,9 +122,10 @@ export const refreshToken = handleAsync(async (req, res) => {
   res.cookie("refreshToken", newRefreshToken, {
     httpOnly: true, // JS Không đọc được
     secure: false, // Chỉ gửi qua https
-    sameSite: "strict", // Chống CSRF,
+    sameSite: "lax", // Chống CSRF,
+    maxAge: 7 * 24 * 60 * 60 * 1000,
   });
-  return createResponse(res, 200, "OK", accessToken);
+  return createResponse(res, 200, "OK", { accessToken });
 });
 
 // đổi mật khẩu
@@ -160,4 +172,20 @@ export const forgotPassword = handleAsync(async (req, res) => {
   await user.save();
 
   return createResponse(res, 200, "Đổi mật khẩu thành công");
+});
+
+export const logout = handleAsync(async (req, res) => {
+  const refreshToken = req.cookies.refreshToken;
+
+  if (refreshToken) {
+    const user = await User.findOne({ refreshToken });
+    if (user) {
+      user.refreshToken = null;
+      await user.save();
+    }
+  }
+
+  res.clearCookie("refreshToken");
+
+  return createResponse(res, 200, "Đăng xuất thành công");
 });
