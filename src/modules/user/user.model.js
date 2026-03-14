@@ -7,7 +7,7 @@ const cancelStatsSchema = new Schema(
     month: { type: Number, required: true },
     count: { type: Number, default: 0 },
   },
-  { _id: false },
+  { _id: false }
 );
 
 const userSchema = new Schema(
@@ -42,6 +42,11 @@ const userSchema = new Schema(
       type: String,
     },
 
+    avatar: {
+      type: String,
+      default: "",
+    },
+
     is_locked: {
       type: Boolean,
       default: false,
@@ -55,9 +60,11 @@ const userSchema = new Schema(
         count: 0,
       }),
     },
+
     refreshToken: {
       type: String,
     },
+
     forgotToken: {
       type: String,
     },
@@ -65,7 +72,7 @@ const userSchema = new Schema(
   {
     timestamps: true,
     versionKey: false,
-  },
+  }
 );
 
 userSchema.index({ email: 1 });
@@ -73,4 +80,5 @@ userSchema.index({ phone: 1 }, { sparse: true });
 userSchema.index({ "cancel_stats.year": 1, "cancel_stats.month": 1 });
 
 const User = mongoose.models.User || mongoose.model("User", userSchema);
+
 export default User;
