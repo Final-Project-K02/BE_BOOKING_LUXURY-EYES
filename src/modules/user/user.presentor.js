@@ -3,7 +3,7 @@ export const toPublicUser = (user) => ({
   fullName: user.fullName,
   email: user.email,
   phone: user.phone,
-  role: String(user.role || "").toUpperCase(),
+  role: String(user.role || "").toLowerCase(),
   status: user.is_locked ? "BLOCKED" : "ACTIVE",
   avatar: user.avatar || "",
   is_locked: !!user.is_locked,

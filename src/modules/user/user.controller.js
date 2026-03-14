@@ -38,11 +38,7 @@ export const updateUserStatus = async (req, res) => {
       });
     }
 
-    const user = await User.findByIdAndUpdate(
-      id,
-      { is_locked: status === "BLOCKED" },
-      { new: true }
-    );
+    const user = await User.findById(id);
 
     if (!user) {
       return res.status(404).json({
@@ -51,13 +47,53 @@ export const updateUserStatus = async (req, res) => {
       });
     }
 
+    if (status === "BLOCKED" && String(req.user?._id) === String(user._id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Không thể tự khóa chính mình",
+      });
+    }
+
+    if (
+      status === "BLOCKED" &&
+      user.role === RoleEnum.ADMIN &&
+      user.is_locked === false
+    ) {
+      const activeAdminCount = await User.countDocuments({
+        role: RoleEnum.ADMIN,
+        is_locked: false,
+      });
+
+      if (activeAdminCount <= 1) {
+        return res.status(400).json({
+          success: false,
+          message: "Không thể khóa admin cuối cùng",
+        });
+      }
+    }
+
+    const updatePayload = {
+      is_locked: status === "BLOCKED",
+      // Revoke current session when account is blocked.
+      refreshToken: status === "BLOCKED" ? null : undefined,
+    };
+
+    // Remove undefined fields so ACTIVE won't overwrite refreshToken.
+    Object.keys(updatePayload).forEach((key) => {
+      if (updatePayload[key] === undefined) delete updatePayload[key];
+    });
+
+    const updatedUser = await User.findByIdAndUpdate(id, updatePayload, {
+      new: true,
+    });
+
     return res.status(200).json({
       success: true,
       message:
         status === "BLOCKED"
           ? "Khóa tài khoản thành công"
           : "Mở khóa tài khoản thành công",
-      data: toPublicUser(user),
+      data: toPublicUser(updatedUser),
     });
   } catch (error) {
     return res.status(500).json({
@@ -82,7 +118,7 @@ export const updateUserRole = async (req, res) => {
     const normalizedRole = String(role || "").toLowerCase();
 
     const allowedRoles = Object.values(RoleEnum).map((item) =>
-      String(item).toLowerCase()
+      String(item).toLowerCase(),
     );
 
     if (!allowedRoles.includes(normalizedRole)) {
@@ -95,7 +131,7 @@ export const updateUserRole = async (req, res) => {
     const user = await User.findByIdAndUpdate(
       id,
       { role: normalizedRole },
-      { new: true }
+      { new: true },
     );
 
     if (!user) {

@@ -13,8 +13,9 @@ export const checkAuth = async (req, res, next) => {
     const userExist = await User.findById(decoded._id);
     if (!userExist) return createError(res, 401, "Unauthorized");
 
-    if (userExist.is_locked)
-      return createError(res, 403, "Tài khoản đã bị khóa");
+    if (userExist.is_locked) {
+      return createError(res, 403, "Tài khoản đã bị khóa", "ACCOUNT_LOCKED");
+    }
     req.user = userExist;
     next();
   } catch (error) {
