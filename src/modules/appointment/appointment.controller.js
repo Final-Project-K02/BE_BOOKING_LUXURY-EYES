@@ -392,7 +392,7 @@ export const requestCancelAppointment = handleAsync(async (req, res) => {
 
 export const updateAppointmentStatus = handleAsync(async (req, res) => {
   const { id } = req.params;
-  const { status, reason, paymentStatus } = req.body;
+  const { status, reason, paymentStatus, withRefund } = req.body;
 
   if (req.user?.role === RoleEnum.USER) {
     if (status !== "CANCELED") {
@@ -413,7 +413,18 @@ export const updateAppointmentStatus = handleAsync(async (req, res) => {
   const appointment = await Appointment.findById(id);
   if (!appointment) return createError(res, 404, "Appointment not found");
 
-  if (paymentStatus) {
+  if (paymentStatus && status && status !== "CANCELED") {
+    return createError(
+      res,
+      400,
+      "Chỉ được gửi paymentStatus cùng status=CANCELED",
+    );
+  }
+
+  const isCancelingNow =
+    status === "CANCELED" && appointment.status !== "CANCELED";
+
+  if (paymentStatus && !isCancelingNow) {
     if (appointment.status !== "CANCELED") {
       return createError(
         res,
@@ -423,10 +434,22 @@ export const updateAppointmentStatus = handleAsync(async (req, res) => {
     }
 
     const currentPaymentStatus = appointment.payment?.paymentStatus || "UNPAID";
+
+    // Idempotent: frontend có thể bắn lại request cùng paymentStatus.
+    if (currentPaymentStatus === paymentStatus) {
+      return createResponse(
+        res,
+        200,
+        "Trạng thái hoàn tiền đã được cập nhật trước đó",
+        appointment,
+      );
+    }
+
     const REFUND_FLOW = {
-      PAID: ["REFUND_PENDING"],
+      PAID: ["REFUND_PENDING", "NO_REFUND"],
       REFUND_PENDING: ["REFUNDED"],
       REFUNDED: [],
+      NO_REFUND: [],
     };
 
     const allowedPaymentTransitions = REFUND_FLOW[currentPaymentStatus] || [];
@@ -441,16 +464,30 @@ export const updateAppointmentStatus = handleAsync(async (req, res) => {
 
     await appointment.save();
 
-    const refundMessage =
-      paymentStatus === "REFUNDED"
-        ? "Đã xác nhận hoàn tiền thành công"
-        : "Đã chuyển trạng thái chờ hoàn tiền";
+    let refundMessage = "Cập nhật trạng thái thanh toán thành công";
+    if (paymentStatus === "REFUNDED") {
+      refundMessage = "Đã xác nhận hoàn tiền thành công";
+    } else if (paymentStatus === "REFUND_PENDING") {
+      refundMessage = "Đã chuyển trạng thái chờ hoàn tiền";
+    } else if (paymentStatus === "NO_REFUND") {
+      refundMessage = "Đã xác nhận hủy không hoàn tiền";
+    }
 
     return createResponse(res, 200, refundMessage, appointment);
   }
 
   if (!status) {
     return createError(res, 400, "status is required");
+  }
+
+  // Idempotent: request trùng trạng thái sẽ không bị báo transition lỗi.
+  if (appointment.status === status) {
+    return createResponse(
+      res,
+      200,
+      "Trạng thái lịch đã được cập nhật trước đó",
+      appointment,
+    );
   }
 
   const STATUS_FLOW = {
@@ -482,8 +519,28 @@ export const updateAppointmentStatus = handleAsync(async (req, res) => {
     appointment.canceledAt = new Date();
 
     if (appointment.payment?.paymentStatus === "PAID") {
-      appointment.payment.paymentStatus = "REFUND_PENDING";
+      if (paymentStatus) {
+        if (!["REFUND_PENDING", "NO_REFUND"].includes(paymentStatus)) {
+          return createError(
+            res,
+            400,
+            "Khi hủy lịch đã thanh toán, paymentStatus chỉ được là REFUND_PENDING hoặc NO_REFUND",
+          );
+        }
+        appointment.payment.paymentStatus = paymentStatus;
+      } else {
+        appointment.payment.paymentStatus =
+          withRefund === false ? "NO_REFUND" : "REFUND_PENDING";
+      }
     } else {
+      if (paymentStatus) {
+        return createError(
+          res,
+          400,
+          "Lịch chưa thanh toán thì không thể đặt paymentStatus này khi hủy",
+        );
+      }
+
       appointment.payment.paymentStatus =
         appointment.payment.paymentStatus === "EXPIRED" ? "EXPIRED" : "FAILED";
     }
@@ -509,11 +566,17 @@ export const updateAppointmentStatus = handleAsync(async (req, res) => {
     });
   }
 
-  const message =
-    status === "CANCELED" &&
-    appointment.payment?.paymentStatus === "REFUND_PENDING"
-      ? "Hủy lịch thành công. Lịch đã chuyển sang trạng thái chờ hoàn tiền."
-      : "Update status success";
+  let message = "Update status success";
+  if (status === "CANCELED") {
+    if (appointment.payment?.paymentStatus === "REFUND_PENDING") {
+      message =
+        "Hủy lịch thành công. Lịch đã chuyển sang trạng thái chờ hoàn tiền.";
+    } else if (appointment.payment?.paymentStatus === "NO_REFUND") {
+      message = "Hủy lịch thành công. Tiền cọc sẽ KHÔNG được hoàn lại.";
+    } else {
+      message = "Hủy lịch thành công.";
+    }
+  }
 
   createResponse(res, 200, message, appointment);
 });

@@ -73,6 +73,7 @@ const appointmentSchema = new mongoose.Schema(
           "EXPIRED",
           "REFUND_PENDING",
           "REFUNDED",
+          "NO_REFUND",
         ],
         default: "UNPAID",
       },

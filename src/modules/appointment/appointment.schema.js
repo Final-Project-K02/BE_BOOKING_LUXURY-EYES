@@ -37,7 +37,10 @@ export const updateAppointmentStatusSchema = z.object({
           "REQUEST-CANCELED",
         ])
         .optional(),
-      paymentStatus: z.enum(["REFUND_PENDING", "REFUNDED"]).optional(),
+      paymentStatus: z
+        .enum(["REFUND_PENDING", "REFUNDED", "NO_REFUND"])
+        .optional(),
+      withRefund: z.boolean().optional(),
       reason: z.string().trim().optional(),
     })
     .refine((data) => !!(data.status || data.paymentStatus), {
