@@ -7,6 +7,7 @@ import {
   formatVnpDate,
   getClientIp,
 } from "../../shared/utils/vnpay.util.js";
+import { sendAppointmentDepositPaidEmail } from "../mail/appointment.mail.js";
 
 const releaseScheduleSlot = async (scheduleId, time) => {
   if (!scheduleId || !time) return;
@@ -281,6 +282,9 @@ export const vnpayIpn = async (req, res) => {
       new Date(appointment.payment.expireAt) <= now;
 
     const isSuccess = responseCode === "00" && transactionStatus === "00";
+    const wasPaidBeforeUpdate =
+      appointment.payment?.paymentStatus === "PAID" ||
+      appointment.status === "CONFIRM";
 
     if (isSuccess) {
       appointment.payment.paymentStatus = "PAID";
@@ -300,6 +304,18 @@ export const vnpayIpn = async (req, res) => {
     }
 
     await appointment.save();
+
+    if (isSuccess && !wasPaidBeforeUpdate) {
+      await appointment.populate([
+        { path: "patient", select: "fullName email" },
+        { path: "patientProfile", select: "fullName email phone" },
+        { path: "doctor", select: "name" },
+      ]);
+
+      sendAppointmentDepositPaidEmail(appointment).catch((err) => {
+        console.error("Send deposit paid email failed:", err.message);
+      });
+    }
 
     return res.status(200).json({ RspCode: "00", Message: "Confirm Success" });
   } catch (error) {
@@ -341,6 +357,9 @@ export const vnpayReturn = async (req, res) => {
       const isExpired =
         !appointment.payment?.expireAt ||
         new Date(appointment.payment.expireAt) <= now;
+      const wasPaidBeforeUpdate =
+        appointment.payment?.paymentStatus === "PAID" ||
+        appointment.status === "CONFIRM";
 
       if (success) {
         appointment.payment.paymentStatus = "PAID";
@@ -360,6 +379,18 @@ export const vnpayReturn = async (req, res) => {
       }
 
       await appointment.save();
+
+      if (success && !wasPaidBeforeUpdate) {
+        await appointment.populate([
+          { path: "patient", select: "fullName email" },
+          { path: "patientProfile", select: "fullName email phone" },
+          { path: "doctor", select: "name" },
+        ]);
+
+        sendAppointmentDepositPaidEmail(appointment).catch((err) => {
+          console.error("Send deposit paid email failed:", err.message);
+        });
+      }
 
       depositAmount = Number(appointment.payment?.depositAmount || 0);
       paidAt = appointment.payment?.paidAt

@@ -6,6 +6,11 @@ import Schedule from "../schedule/doctorSchedule.js";
 import Appointment from "./appointment.js";
 import PatientProfile from "../patient-profile/patient-profile.model.js";
 import { RoleEnum } from "../../shared/constant/enum.js";
+import {
+  sendAdminCanceledPaidAppointmentNoRefundEmail,
+  sendAdminCanceledPaidAppointmentWithRefundEmail,
+  sendAppointmentPaidCanceledEmail,
+} from "../mail/appointment.mail.js";
 
 const ACTIVE_APPOINTMENT_STATUSES = [
   "PENDING",
@@ -13,6 +18,32 @@ const ACTIVE_APPOINTMENT_STATUSES = [
   "CHECKIN",
   "REQUEST-CANCELED",
 ];
+
+const FILTERABLE_APPOINTMENT_STATUSES = [
+  "PENDING",
+  "CONFIRM",
+  "CHECKIN",
+  "DONE",
+  "CANCELED",
+];
+
+const toArrayQueryValue = (value) => {
+  if (!value) return [];
+  if (Array.isArray(value)) {
+    return value
+      .flatMap((item) => String(item).split(","))
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+
+  return String(value)
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+};
+
+const escapeRegex = (value = "") =>
+  String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 const releaseScheduleSlot = async (scheduleId, time) => {
   if (!scheduleId || !time) return;
@@ -76,6 +107,7 @@ export const getAppointmentsByDoctor = handleAsync(async (req, res) => {
       "patientProfile",
       "fullName phone gender dateOfBirth identityCard email address",
     )
+    .populate("patient", "fullName email phone")
     .populate("doctor", "name fullName avatar experience_year")
 
     .sort({ dateTime: 1 });
@@ -84,17 +116,113 @@ export const getAppointmentsByDoctor = handleAsync(async (req, res) => {
 });
 
 export const getAppointments = handleAsync(async (req, res) => {
-  const { userId, doctorId, scheduleId } = req.query;
+  const {
+    userId,
+    doctorId,
+    scheduleId,
+    status,
+    paymentStatus,
+    patientKeyword,
+    keyword,
+    dateFrom,
+    dateTo,
+    fromDate,
+    toDate,
+    startDate,
+    endDate,
+  } = req.query;
   const filter = {};
 
-  if (userId) filter.patient = userId;
+  if (req.user?.role === RoleEnum.USER) {
+    filter.patient = req.user._id;
+  } else if (userId) {
+    filter.patient = userId;
+  }
+
   if (doctorId) filter.doctor = doctorId;
   if (scheduleId) filter.scheduleId = scheduleId;
+
+  const appointmentStatuses = toArrayQueryValue(status);
+  if (appointmentStatuses.length > 0) {
+    const hasInvalidStatus = appointmentStatuses.some(
+      (item) => !FILTERABLE_APPOINTMENT_STATUSES.includes(item),
+    );
+
+    if (hasInvalidStatus) {
+      return createError(
+        res,
+        400,
+        "status không hợp lệ cho bộ lọc danh sách lịch",
+      );
+    }
+
+    filter.status =
+      appointmentStatuses.length === 1
+        ? appointmentStatuses[0]
+        : { $in: appointmentStatuses };
+  }
+
+  const paymentStatuses = toArrayQueryValue(paymentStatus);
+  if (paymentStatuses.length > 0) {
+    filter["payment.paymentStatus"] =
+      paymentStatuses.length === 1
+        ? paymentStatuses[0]
+        : { $in: paymentStatuses };
+  }
+
+  const fromValue = dateFrom || fromDate || startDate;
+  const toValue = dateTo || toDate || endDate;
+
+  if (fromValue || toValue) {
+    const dateFilter = {};
+
+    if (fromValue) {
+      const from = new Date(fromValue);
+      if (Number.isNaN(from.getTime())) {
+        return createError(res, 400, "dateFrom không hợp lệ");
+      }
+
+      from.setHours(0, 0, 0, 0);
+      dateFilter.$gte = from;
+    }
+
+    if (toValue) {
+      const to = new Date(toValue);
+      if (Number.isNaN(to.getTime())) {
+        return createError(res, 400, "dateTo không hợp lệ");
+      }
+
+      to.setHours(23, 59, 59, 999);
+      dateFilter.$lte = to;
+    }
+
+    filter.dateTime = dateFilter;
+  }
+
+  const normalizedPatientKeyword = (patientKeyword || keyword || "").trim();
+  if (normalizedPatientKeyword) {
+    const patientRegex = new RegExp(escapeRegex(normalizedPatientKeyword), "i");
+
+    const matchingProfiles = await PatientProfile.find(
+      {
+        $or: [
+          { fullName: patientRegex },
+          { phone: patientRegex },
+          { identityCard: patientRegex },
+          { email: patientRegex },
+        ],
+      },
+      { _id: 1 },
+    ).lean();
+
+    filter.patientProfile = { $in: matchingProfiles.map((item) => item._id) };
+  }
 
   await expirePendingAppointments(filter);
 
   const data = await Appointment.find(filter)
     .populate("doctor", "name fullName avatar experience_year")
+    .populate("patient", "fullName email phone")
     .populate(
       "patientProfile",
       "fullName phone gender dateOfBirth identityCard email address",
@@ -103,6 +231,57 @@ export const getAppointments = handleAsync(async (req, res) => {
     .sort({ createdAt: -1 });
 
   createResponse(res, 200, "Success", data);
+});
+
+export const getAppointmentDetail = handleAsync(async (req, res) => {
+  const { id } = req.params;
+
+  if (!/^[a-fA-F0-9]{24}$/.test(String(id))) {
+    return createError(res, 400, "id không hợp lệ");
+  }
+
+  const filter = { _id: id };
+
+  // User chỉ xem được lịch của chính mình.
+  if (req.user?.role === RoleEnum.USER) {
+    filter.patient = req.user._id;
+  }
+
+  await expirePendingAppointments(filter);
+
+  const appointment = await Appointment.findOne(filter)
+    .populate("doctor", "name fullName avatar experience_year")
+    .populate("patient", "fullName email phone")
+    .populate(
+      "patientProfile",
+      "fullName phone gender dateOfBirth identityCard email address",
+    )
+    .populate("scheduleId", "doctorId roomId roomName price timeSlots");
+
+  if (!appointment) {
+    return createError(res, 404, "Không tìm thấy lịch hẹn");
+  }
+
+  const appointmentData = appointment.toObject();
+  const schedule = appointmentData?.scheduleId;
+
+  if (schedule?.timeSlots?.length) {
+    const appointmentDateKey = new Date(appointmentData.dateTime)
+      .toISOString()
+      .slice(0, 10);
+
+    const selectedTimeSlot = schedule.timeSlots.find((slot) => {
+      const slotDateKey = new Date(slot.date).toISOString().slice(0, 10);
+      return (
+        slot.time === appointmentData.time && slotDateKey === appointmentDateKey
+      );
+    });
+
+    schedule.selectedTimeSlot = selectedTimeSlot || null;
+    delete schedule.timeSlots;
+  }
+
+  createResponse(res, 200, "Success", appointmentData);
 });
 
 export const createAppointment = async (req, res) => {
@@ -285,6 +464,7 @@ export const createAppointment = async (req, res) => {
 
     const populated = await Appointment.findById(appointment._id)
       .populate("patientProfile", "fullName phone")
+      .populate("patient", "fullName email phone")
       .populate("doctor", "name avatar experience_year");
 
     return res.status(201).json({
@@ -351,15 +531,28 @@ export const requestCancelAppointment = handleAsync(async (req, res) => {
   appointment.canceledBy = "patient";
   appointment.canceledAt = new Date();
   appointment.reason = reason || "Người dùng hủy";
+  const wasPaid = appointment.payment?.paymentStatus === "PAID";
 
   // User hủy = KHÔNG hoàn cọc (giữ nguyên PAID nếu đã thanh toán)
-  if (appointment.payment?.paymentStatus !== "PAID") {
+  if (!wasPaid) {
     appointment.payment.paymentStatus =
       appointment.payment.paymentStatus === "EXPIRED" ? "EXPIRED" : "FAILED";
   }
 
   await releaseScheduleSlot(appointment.scheduleId, appointment.time);
   await appointment.save();
+
+  if (wasPaid) {
+    await appointment.populate([
+      { path: "patient", select: "fullName email" },
+      { path: "patientProfile", select: "fullName email phone" },
+      { path: "doctor", select: "name" },
+    ]);
+
+    sendAppointmentPaidCanceledEmail(appointment).catch((err) => {
+      console.error("Send paid cancellation email failed:", err.message);
+    });
+  }
 
   const message =
     appointment.payment?.paymentStatus === "PAID"
@@ -375,7 +568,7 @@ export const requestCancelAppointment = handleAsync(async (req, res) => {
 
 export const updateAppointmentStatus = handleAsync(async (req, res) => {
   const { id } = req.params;
-  const { status, reason, paymentStatus } = req.body;
+  const { status, reason, paymentStatus, withRefund } = req.body;
 
   if (req.user?.role === RoleEnum.USER) {
     if (status !== "CANCELED") {
@@ -396,7 +589,18 @@ export const updateAppointmentStatus = handleAsync(async (req, res) => {
   const appointment = await Appointment.findById(id);
   if (!appointment) return createError(res, 404, "Appointment not found");
 
-  if (paymentStatus) {
+  if (paymentStatus && status && status !== "CANCELED") {
+    return createError(
+      res,
+      400,
+      "Chỉ được gửi paymentStatus cùng status=CANCELED",
+    );
+  }
+
+  const isCancelingNow =
+    status === "CANCELED" && appointment.status !== "CANCELED";
+
+  if (paymentStatus && !isCancelingNow) {
     if (appointment.status !== "CANCELED") {
       return createError(
         res,
@@ -406,10 +610,22 @@ export const updateAppointmentStatus = handleAsync(async (req, res) => {
     }
 
     const currentPaymentStatus = appointment.payment?.paymentStatus || "UNPAID";
+
+    // Idempotent: frontend có thể bắn lại request cùng paymentStatus.
+    if (currentPaymentStatus === paymentStatus) {
+      return createResponse(
+        res,
+        200,
+        "Trạng thái hoàn tiền đã được cập nhật trước đó",
+        appointment,
+      );
+    }
+
     const REFUND_FLOW = {
-      PAID: ["REFUND_PENDING"],
+      PAID: ["REFUND_PENDING", "NO_REFUND"],
       REFUND_PENDING: ["REFUNDED"],
       REFUNDED: [],
+      NO_REFUND: [],
     };
 
     const allowedPaymentTransitions = REFUND_FLOW[currentPaymentStatus] || [];
@@ -424,16 +640,30 @@ export const updateAppointmentStatus = handleAsync(async (req, res) => {
 
     await appointment.save();
 
-    const refundMessage =
-      paymentStatus === "REFUNDED"
-        ? "Đã xác nhận hoàn tiền thành công"
-        : "Đã chuyển trạng thái chờ hoàn tiền";
+    let refundMessage = "Cập nhật trạng thái thanh toán thành công";
+    if (paymentStatus === "REFUNDED") {
+      refundMessage = "Đã xác nhận hoàn tiền thành công";
+    } else if (paymentStatus === "REFUND_PENDING") {
+      refundMessage = "Đã chuyển trạng thái chờ hoàn tiền";
+    } else if (paymentStatus === "NO_REFUND") {
+      refundMessage = "Đã xác nhận hủy không hoàn tiền";
+    }
 
     return createResponse(res, 200, refundMessage, appointment);
   }
 
   if (!status) {
     return createError(res, 400, "status is required");
+  }
+
+  // Idempotent: request trùng trạng thái sẽ không bị báo transition lỗi.
+  if (appointment.status === status) {
+    return createResponse(
+      res,
+      200,
+      "Trạng thái lịch đã được cập nhật trước đó",
+      appointment,
+    );
   }
 
   const STATUS_FLOW = {
@@ -451,6 +681,9 @@ export const updateAppointmentStatus = handleAsync(async (req, res) => {
     return createError(res, 400, "Invalid status transition");
   }
 
+  const previousStatus = appointment.status;
+  const wasPaidBeforeCancel = appointment.payment?.paymentStatus === "PAID";
+
   appointment.status = status;
 
   if (reason) {
@@ -462,8 +695,28 @@ export const updateAppointmentStatus = handleAsync(async (req, res) => {
     appointment.canceledAt = new Date();
 
     if (appointment.payment?.paymentStatus === "PAID") {
-      appointment.payment.paymentStatus = "REFUND_PENDING";
+      if (paymentStatus) {
+        if (!["REFUND_PENDING", "NO_REFUND"].includes(paymentStatus)) {
+          return createError(
+            res,
+            400,
+            "Khi hủy lịch đã thanh toán, paymentStatus chỉ được là REFUND_PENDING hoặc NO_REFUND",
+          );
+        }
+        appointment.payment.paymentStatus = paymentStatus;
+      } else {
+        appointment.payment.paymentStatus =
+          withRefund === false ? "NO_REFUND" : "REFUND_PENDING";
+      }
     } else {
+      if (paymentStatus) {
+        return createError(
+          res,
+          400,
+          "Lịch chưa thanh toán thì không thể đặt paymentStatus này khi hủy",
+        );
+      }
+
       appointment.payment.paymentStatus =
         appointment.payment.paymentStatus === "EXPIRED" ? "EXPIRED" : "FAILED";
     }
@@ -473,11 +726,38 @@ export const updateAppointmentStatus = handleAsync(async (req, res) => {
 
   await appointment.save();
 
-  const message =
+  if (
     status === "CANCELED" &&
-    appointment.payment?.paymentStatus === "REFUND_PENDING"
-      ? "Hủy lịch thành công. Lịch đã chuyển sang trạng thái chờ hoàn tiền."
-      : "Update status success";
+    wasPaidBeforeCancel &&
+    ["CONFIRM", "CHECKIN"].includes(previousStatus)
+  ) {
+    await appointment.populate([
+      { path: "patient", select: "fullName email" },
+      { path: "patientProfile", select: "fullName" },
+      { path: "doctor", select: "name" },
+    ]);
+
+    const sendAdminCanceledEmail =
+      appointment.payment?.paymentStatus === "NO_REFUND"
+        ? sendAdminCanceledPaidAppointmentNoRefundEmail
+        : sendAdminCanceledPaidAppointmentWithRefundEmail;
+
+    sendAdminCanceledEmail(appointment).catch((err) => {
+      console.error("Send admin cancel paid email failed:", err.message);
+    });
+  }
+
+  let message = "Update status success";
+  if (status === "CANCELED") {
+    if (appointment.payment?.paymentStatus === "REFUND_PENDING") {
+      message =
+        "Hủy lịch thành công. Lịch đã chuyển sang trạng thái chờ hoàn tiền.";
+    } else if (appointment.payment?.paymentStatus === "NO_REFUND") {
+      message = "Hủy lịch thành công. Tiền cọc sẽ KHÔNG được hoàn lại.";
+    } else {
+      message = "Hủy lịch thành công.";
+    }
+  }
 
   createResponse(res, 200, message, appointment);
 });
