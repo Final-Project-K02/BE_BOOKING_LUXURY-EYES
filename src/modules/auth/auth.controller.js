@@ -4,7 +4,7 @@ import handleAsync from "../../shared/utils/handleAsync.js";
 import {
   getTemplateForgotPassword,
   getTemplateRegisterSuccess,
-} from "../mail/mail.template.js";
+} from "../mail/auth.template.js";
 import { sendMail } from "../mail/sendMail.js";
 import User from "../user/user.model.js";
 import bcrypt from "bcryptjs";

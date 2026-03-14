@@ -22,7 +22,7 @@ const appointmentSchema = new mongoose.Schema(
 
     scheduleId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Schedule",
+      ref: "DoctorSchedule",
       required: true,
     },
 
@@ -101,7 +101,7 @@ const appointmentSchema = new mongoose.Schema(
         "CHECKIN",
         "DONE",
         "CANCELED",
-        "REQUEST-CANCELED",
+        // "REQUEST-CANCELED",
       ],
       default: "PENDING",
     },

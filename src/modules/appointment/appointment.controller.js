@@ -7,7 +7,8 @@ import Appointment from "./appointment.js";
 import PatientProfile from "../patient-profile/patient-profile.model.js";
 import { RoleEnum } from "../../shared/constant/enum.js";
 import {
-  sendAdminCanceledPaidAppointmentEmail,
+  sendAdminCanceledPaidAppointmentNoRefundEmail,
+  sendAdminCanceledPaidAppointmentWithRefundEmail,
   sendAppointmentPaidCanceledEmail,
 } from "../mail/appointment.mail.js";
 
@@ -17,6 +18,32 @@ const ACTIVE_APPOINTMENT_STATUSES = [
   "CHECKIN",
   "REQUEST-CANCELED",
 ];
+
+const FILTERABLE_APPOINTMENT_STATUSES = [
+  "PENDING",
+  "CONFIRM",
+  "CHECKIN",
+  "DONE",
+  "CANCELED",
+];
+
+const toArrayQueryValue = (value) => {
+  if (!value) return [];
+  if (Array.isArray(value)) {
+    return value
+      .flatMap((item) => String(item).split(","))
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+
+  return String(value)
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+};
+
+const escapeRegex = (value = "") =>
+  String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 const releaseScheduleSlot = async (scheduleId, time) => {
   if (!scheduleId || !time) return;
@@ -80,6 +107,7 @@ export const getAppointmentsByDoctor = handleAsync(async (req, res) => {
       "patientProfile",
       "fullName phone gender dateOfBirth identityCard email address",
     )
+    .populate("patient", "fullName email phone")
     .populate("doctor", "name fullName avatar experience_year")
 
     .sort({ dateTime: 1 });
@@ -88,17 +116,113 @@ export const getAppointmentsByDoctor = handleAsync(async (req, res) => {
 });
 
 export const getAppointments = handleAsync(async (req, res) => {
-  const { userId, doctorId, scheduleId } = req.query;
+  const {
+    userId,
+    doctorId,
+    scheduleId,
+    status,
+    paymentStatus,
+    patientKeyword,
+    keyword,
+    dateFrom,
+    dateTo,
+    fromDate,
+    toDate,
+    startDate,
+    endDate,
+  } = req.query;
   const filter = {};
 
-  if (userId) filter.patient = userId;
+  if (req.user?.role === RoleEnum.USER) {
+    filter.patient = req.user._id;
+  } else if (userId) {
+    filter.patient = userId;
+  }
+
   if (doctorId) filter.doctor = doctorId;
   if (scheduleId) filter.scheduleId = scheduleId;
+
+  const appointmentStatuses = toArrayQueryValue(status);
+  if (appointmentStatuses.length > 0) {
+    const hasInvalidStatus = appointmentStatuses.some(
+      (item) => !FILTERABLE_APPOINTMENT_STATUSES.includes(item),
+    );
+
+    if (hasInvalidStatus) {
+      return createError(
+        res,
+        400,
+        "status không hợp lệ cho bộ lọc danh sách lịch",
+      );
+    }
+
+    filter.status =
+      appointmentStatuses.length === 1
+        ? appointmentStatuses[0]
+        : { $in: appointmentStatuses };
+  }
+
+  const paymentStatuses = toArrayQueryValue(paymentStatus);
+  if (paymentStatuses.length > 0) {
+    filter["payment.paymentStatus"] =
+      paymentStatuses.length === 1
+        ? paymentStatuses[0]
+        : { $in: paymentStatuses };
+  }
+
+  const fromValue = dateFrom || fromDate || startDate;
+  const toValue = dateTo || toDate || endDate;
+
+  if (fromValue || toValue) {
+    const dateFilter = {};
+
+    if (fromValue) {
+      const from = new Date(fromValue);
+      if (Number.isNaN(from.getTime())) {
+        return createError(res, 400, "dateFrom không hợp lệ");
+      }
+
+      from.setHours(0, 0, 0, 0);
+      dateFilter.$gte = from;
+    }
+
+    if (toValue) {
+      const to = new Date(toValue);
+      if (Number.isNaN(to.getTime())) {
+        return createError(res, 400, "dateTo không hợp lệ");
+      }
+
+      to.setHours(23, 59, 59, 999);
+      dateFilter.$lte = to;
+    }
+
+    filter.dateTime = dateFilter;
+  }
+
+  const normalizedPatientKeyword = (patientKeyword || keyword || "").trim();
+  if (normalizedPatientKeyword) {
+    const patientRegex = new RegExp(escapeRegex(normalizedPatientKeyword), "i");
+
+    const matchingProfiles = await PatientProfile.find(
+      {
+        $or: [
+          { fullName: patientRegex },
+          { phone: patientRegex },
+          { identityCard: patientRegex },
+          { email: patientRegex },
+        ],
+      },
+      { _id: 1 },
+    ).lean();
+
+    filter.patientProfile = { $in: matchingProfiles.map((item) => item._id) };
+  }
 
   await expirePendingAppointments(filter);
 
   const data = await Appointment.find(filter)
     .populate("doctor", "name fullName avatar experience_year")
+    .populate("patient", "fullName email phone")
     .populate(
       "patientProfile",
       "fullName phone gender dateOfBirth identityCard email address",
@@ -107,6 +231,57 @@ export const getAppointments = handleAsync(async (req, res) => {
     .sort({ createdAt: -1 });
 
   createResponse(res, 200, "Success", data);
+});
+
+export const getAppointmentDetail = handleAsync(async (req, res) => {
+  const { id } = req.params;
+
+  if (!/^[a-fA-F0-9]{24}$/.test(String(id))) {
+    return createError(res, 400, "id không hợp lệ");
+  }
+
+  const filter = { _id: id };
+
+  // User chỉ xem được lịch của chính mình.
+  if (req.user?.role === RoleEnum.USER) {
+    filter.patient = req.user._id;
+  }
+
+  await expirePendingAppointments(filter);
+
+  const appointment = await Appointment.findOne(filter)
+    .populate("doctor", "name fullName avatar experience_year")
+    .populate("patient", "fullName email phone")
+    .populate(
+      "patientProfile",
+      "fullName phone gender dateOfBirth identityCard email address",
+    )
+    .populate("scheduleId", "doctorId roomId roomName price timeSlots");
+
+  if (!appointment) {
+    return createError(res, 404, "Không tìm thấy lịch hẹn");
+  }
+
+  const appointmentData = appointment.toObject();
+  const schedule = appointmentData?.scheduleId;
+
+  if (schedule?.timeSlots?.length) {
+    const appointmentDateKey = new Date(appointmentData.dateTime)
+      .toISOString()
+      .slice(0, 10);
+
+    const selectedTimeSlot = schedule.timeSlots.find((slot) => {
+      const slotDateKey = new Date(slot.date).toISOString().slice(0, 10);
+      return (
+        slot.time === appointmentData.time && slotDateKey === appointmentDateKey
+      );
+    });
+
+    schedule.selectedTimeSlot = selectedTimeSlot || null;
+    delete schedule.timeSlots;
+  }
+
+  createResponse(res, 200, "Success", appointmentData);
 });
 
 export const createAppointment = async (req, res) => {
@@ -289,6 +464,7 @@ export const createAppointment = async (req, res) => {
 
     const populated = await Appointment.findById(appointment._id)
       .populate("patientProfile", "fullName phone")
+      .populate("patient", "fullName email phone")
       .populate("doctor", "name avatar experience_year");
 
     return res.status(201).json({
@@ -561,7 +737,12 @@ export const updateAppointmentStatus = handleAsync(async (req, res) => {
       { path: "doctor", select: "name" },
     ]);
 
-    sendAdminCanceledPaidAppointmentEmail(appointment).catch((err) => {
+    const sendAdminCanceledEmail =
+      appointment.payment?.paymentStatus === "NO_REFUND"
+        ? sendAdminCanceledPaidAppointmentNoRefundEmail
+        : sendAdminCanceledPaidAppointmentWithRefundEmail;
+
+    sendAdminCanceledEmail(appointment).catch((err) => {
       console.error("Send admin cancel paid email failed:", err.message);
     });
   }

@@ -1,6 +1,7 @@
 import express from "express";
 import {
   getAppointments,
+  getAppointmentDetail,
   createAppointment,
   updateAppointmentStatus,
   getAppointmentsByDoctor,
@@ -21,6 +22,7 @@ const appointmentRouter = express.Router();
 appointmentRouter.use(checkAuth);
 appointmentRouter.get("/doctor", getAppointmentsByDoctor);
 appointmentRouter.get("/", getAppointments);
+appointmentRouter.get("/:id", getAppointmentDetail);
 appointmentRouter.post(
   "/",
   checkPermission([RoleEnum.USER]),
