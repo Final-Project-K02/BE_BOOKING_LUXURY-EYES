@@ -110,8 +110,8 @@ export const findPatientProfilesMatching = (searchRegex) =>
 export const findLatestPatientProfile = (userId) =>
   PatientProfile.findOne({ userId }).sort({ createdAt: -1 });
 
-export const findPatientProfileByIdAndUser = (profileId, userId) =>
-  PatientProfile.findOne({ _id: profileId, userId });
+export const findPatientProfileById = (profileId) =>
+  PatientProfile.findOne({ _id: profileId });
 
 // ─── Thao tác slot lịch làm việc ──────────────────────────────────────────────
 

@@ -18,7 +18,7 @@ import {
   existsActiveAtTime,
   findPatientProfilesMatching,
   findLatestPatientProfile,
-  findPatientProfileByIdAndUser,
+  findPatientProfileById,
   reserveScheduleSlot,
   releaseScheduleSlot,
 } from "./appointment.repository.js";
@@ -217,9 +217,8 @@ export const bookAppointment = async (body, user) => {
     selectedPatientProfileId = latestProfile._id;
   }
 
-  const existingProfile = await findPatientProfileByIdAndUser(
+  const existingProfile = await findPatientProfileById(
     selectedPatientProfileId,
-    user._id,
   );
   if (!existingProfile)
     throw new AppError(404, "Không tìm thấy hồ sơ bệnh nhân");
