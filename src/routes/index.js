@@ -3,7 +3,7 @@ import authRoutes from "../modules/auth/auth.routes.js";
 import userRoutes from "../modules/user/user.routes.js";
 import doctorRouter from "../modules/doctor/doctor.routes.js";
 import scheduleRouter from "../modules/schedule/schedule.routes.js";
-import { getDoctorsByAdmin } from "../modules/doctor/doctorController.js";
+import { getDoctorsByAdmin } from "../modules/doctor/doctor.controller.js";
 import { checkAuth } from "../shared/middlewares/checkAuth.js";
 import { checkPermission } from "../shared/middlewares/checkPermission.js";
 import patientProfileRoutes from "../modules/patient-profile/patient-profile.routes.js";
