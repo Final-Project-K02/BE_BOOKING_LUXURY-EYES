@@ -220,7 +220,11 @@ export const handleVnpayIpn = async (queryParams) => {
       new Date(appointment.payment.expireAt) <= new Date();
     const isSuccess = responseCode === "00" && transactionStatus === "00";
 
-    await applyVnpayResult(appointment, { isSuccess, isExpired, vnpTransactionNo });
+    await applyVnpayResult(appointment, {
+      isSuccess,
+      isExpired,
+      vnpTransactionNo,
+    });
 
     return { rspCode: "00", message: "Confirm Success" };
   } catch {
@@ -264,7 +268,11 @@ export const handleVnpayReturn = async (queryParams) => {
       !appointment.payment?.expireAt ||
       new Date(appointment.payment.expireAt) <= new Date();
 
-    await applyVnpayResult(appointment, { isSuccess, isExpired, vnpTransactionNo });
+    await applyVnpayResult(appointment, {
+      isSuccess,
+      isExpired,
+      vnpTransactionNo,
+    });
 
     const depositAmount = Number(appointment.payment?.depositAmount || 0);
     const paidAt = appointment.payment?.paidAt
