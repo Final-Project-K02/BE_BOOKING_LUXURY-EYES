@@ -1,0 +1,191 @@
+import createError from "../../shared/utils/createError.js";
+import createResponse from "../../shared/utils/createResponse.js";
+import handleAsync from "../../shared/utils/handleAsync.js";
+import {
+  getTemplateForgotPassword,
+  getTemplateRegisterSuccess,
+} from "../mail/auth.template.js";
+import { sendMail } from "../mail/sendMail.js";
+import User from "../user/user.model.js";
+import bcrypt from "bcryptjs";
+import jwt from "jsonwebtoken";
+import { toPublicUser } from "../user/user.presentor.js";
+import {
+  JWT_FORGOT_PASSWORD,
+  JWT_FORGOT_PASSWORD_IN,
+  JWT_REFRESH,
+  JWT_REFRESH_IN,
+  JWT_SECRET,
+  JWT_SECRET_IN,
+} from "../../shared/configs/dotenvConfig.js";
+
+// register
+export const register = handleAsync(async (req, res) => {
+  const { email, password, fullName } = req.body;
+
+  const userExist = await User.findOne({ email });
+  if (userExist)
+    return createError(
+      res,
+      400,
+      "Email đã tồn tại. Vui lòng sử dụng email khác",
+    );
+  const salt = bcrypt.genSaltSync(10);
+  const hash = bcrypt.hashSync(password, salt);
+
+  const user = await User.create({ email, password: hash, fullName });
+
+  sendMail({
+    to: email,
+    subject: "Đăng ký tài khoản thành công | Luxury Eyes",
+    html: getTemplateRegisterSuccess({
+      fullName,
+    }),
+  }).catch((err) => {
+    console.error("Send mail failed:", err.message);
+  });
+
+  createResponse(res, 201, "Đăng ký thành công", toPublicUser(user));
+});
+
+// login
+export const login = handleAsync(async (req, res) => {
+  const { email, password } = req.body;
+
+  const userExist = await User.findOne({ email }).select("+password");
+  if (!userExist)
+    return createError(res, 401, "Email hoặc mật khẩu không đúng");
+
+  if (userExist.is_locked) return createError(res, 403, "Tài khoản đã bị khóa");
+
+  const isMatched = await bcrypt.compare(password, userExist.password);
+  if (!isMatched)
+    return createError(res, 401, "Email hoặc mật khẩu không đúng");
+
+  const accessToken = jwt.sign(
+    { _id: userExist._id, role: userExist.role },
+    JWT_SECRET,
+    {
+      expiresIn: JWT_SECRET_IN,
+    },
+  );
+
+  const refreshToken = jwt.sign({ _id: userExist._id }, JWT_REFRESH, {
+    expiresIn: JWT_REFRESH_IN,
+  });
+
+  res.cookie("refreshToken", refreshToken, {
+    httpOnly: true, // JS Không đọc được
+    secure: false, // Chỉ gửi qua https
+    sameSite: "lax", // Chống CSRF,
+    maxAge: 7 * 24 * 60 * 60 * 1000,
+  });
+
+  userExist.refreshToken = refreshToken;
+  await userExist.save();
+
+  createResponse(res, 200, "Đăng nhập thành công", {
+    user: toPublicUser(userExist),
+    accessToken,
+  });
+});
+
+// refresh token
+export const refreshToken = handleAsync(async (req, res) => {
+  const refreshToken = req.cookies.refreshToken;
+  if (!refreshToken) return createError(res, 401, "Unauthenticated");
+
+  let payload;
+  try {
+    payload = jwt.verify(refreshToken, JWT_REFRESH);
+  } catch (err) {
+    return createError(res, 401, "Refresh token expired or invalid");
+  }
+  const user = await User.findOne({ refreshToken: refreshToken });
+  if (!payload || !user) {
+    res.clearCookie("refreshToken");
+    return createError(res, 401, "Refresh Token invalid");
+  }
+
+  if (user.is_locked) return createError(res, 403, "Tài khoản đã bị khóa");
+
+  const accessToken = jwt.sign({ _id: user._id, role: user.role }, JWT_SECRET, {
+    expiresIn: JWT_SECRET_IN,
+  });
+
+  const newRefreshToken = jwt.sign({ _id: user._id }, JWT_REFRESH, {
+    expiresIn: JWT_REFRESH_IN,
+  });
+  user.refreshToken = newRefreshToken;
+  await user.save();
+
+  res.cookie("refreshToken", newRefreshToken, {
+    httpOnly: true, // JS Không đọc được
+    secure: false, // Chỉ gửi qua https
+    sameSite: "lax", // Chống CSRF,
+    maxAge: 7 * 24 * 60 * 60 * 1000,
+  });
+  return createResponse(res, 200, "OK", { accessToken });
+});
+
+// đổi mật khẩu
+export const sendForgotPassword = handleAsync(async (req, res) => {
+  const { email } = req.body;
+  const userExist = await User.findOne({ email });
+  if (!userExist) return createError(res, 404, "Không tìm thấy người dùng");
+
+  const forgotPassword = jwt.sign({ _id: userExist._id }, JWT_FORGOT_PASSWORD, {
+    expiresIn: JWT_FORGOT_PASSWORD_IN,
+  });
+  await sendMail({
+    to: userExist.email,
+    subject: "Luxury Eyes - Quên mật khẩu",
+    html: getTemplateForgotPassword({
+      fullName: userExist.fullName,
+      token: forgotPassword,
+    }),
+  });
+
+  userExist.forgotToken = forgotPassword;
+  await userExist.save();
+  return createResponse(
+    res,
+    200,
+    "Vui lòng kiểm tra email để đặt lại mật khẩu",
+  );
+});
+
+export const forgotPassword = handleAsync(async (req, res) => {
+  const { token, newPassword } = req.body;
+  if (!token) return createError(res, 401, "INVALID TOKEN");
+  if (!newPassword) return createError(res, 400, "newPassword là bắt buộc");
+
+  const user = await User.findOne({ forgotToken: token }).select("+password");
+  if (!user) return createError(res, 400, "Token không hợp lệ hoặc đã hết hạn");
+
+  jwt.verify(token, JWT_FORGOT_PASSWORD);
+
+  const hash = await bcrypt.hash(newPassword, 10);
+
+  user.password = hash;
+  user.forgotToken = undefined;
+  await user.save();
+
+  return createResponse(res, 200, "Đổi mật khẩu thành công");
+});
+
+export const logout = handleAsync(async (req, res) => {
+  const refreshToken = req.cookies.refreshToken;
+
+  if (refreshToken) {
+    const user = await User.findOne({ refreshToken });
+    if (user) {
+      user.refreshToken = null;
+      await user.save();
+    }
+  }
+
+  res.clearCookie("refreshToken");
+
+  return createResponse(res, 200, "Đăng xuất thành công");
+});
